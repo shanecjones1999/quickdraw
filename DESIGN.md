@@ -24,41 +24,41 @@ Quick Draw is a browser-based multiplayer party game. A host (laptop connected t
 │  (Laptop/TV) │     │  (Phones ×N)     │
 │              │     │                  │
 │  React app   │     │  React app       │
-│  route: /host│     │  route: /play    │
+│  (index /)   │     │  (index /)       │
 └──────────────┘     └─────────────────┘
 ```
 
 ### Tech Stack
 
-| Layer      | Choice                              |
-|------------|-------------------------------------|
-| Frontend   | React (Vite), CSS Modules           |
-| Realtime   | Socket.io (or native WebSockets)    |
-| Backend    | Node.js + Express + Socket.io       |
-| State      | In-memory (no database)             |
-| Deployment | Single server, static React build   |
+| Layer      | Choice                                    |
+|------------|-------------------------------------------|
+| Frontend   | React (Vite), TypeScript, CSS Modules     |
+| Realtime   | Socket.io (or native WebSockets)          |
+| Backend    | Node.js + Express + Socket.io, TypeScript |
+| State      | In-memory (no database)                   |
+| Deployment | Single server, static React build         |
 
 ---
 
-## URL / Routing
+## Routing
 
-| URL             | View         | Description                          |
-|-----------------|--------------|--------------------------------------|
-| `/`             | Landing      | Choose Host or Join                  |
-| `/host`         | Host View    | TV screen — room code, player boards |
-| `/play`         | Player View  | Phone screen — the actual game       |
+Everything lives at `/`. The app renders different views based on client state — no URL routing is used.
 
-Players navigate to `/play` with their name and room code filled in from the landing page form. The host navigates directly to `/host`.
+| Client State      | View Shown   | Description                          |
+|-------------------|--------------|--------------------------------------|
+| No role chosen    | Landing      | Choose Host or Join                  |
+| Role: host        | Host View    | TV screen — room code, player boards |
+| Role: player      | Player View  | Phone screen — the actual game       |
 
 ---
 
 ## Room Lifecycle
 
 ```
-Host opens /host
+Host clicks "Host" on landing
      │
      ▼
-[LOBBY] ── Room code displayed ── Players join via /play
+[LOBBY] ── Room code displayed ── Players join via landing page
      │
      │  Host clicks "Start Game"
      ▼
@@ -194,23 +194,26 @@ Piece A occupies cells `(3,1), (3,2), (4,1), (4,2)` — i.e. it has reached the 
 
 ```
 src/
-├── main.jsx                    # React entry, router setup
-├── socket.js                   # Singleton socket connection
-├── pages/
-│   ├── Landing.jsx             # / — host or join
-│   ├── Host.jsx                # /host — TV view
-│   └── Player.jsx              # /play — phone view
+├── main.tsx                    # React entry
+├── App.tsx                     # Root — renders Landing, Host, or Player based on state
+├── socket.ts                   # Singleton socket connection
+├── types.ts                    # Shared TypeScript types
+├── views/
+│   ├── Landing.tsx             # Choose host or join
+│   ├── Host.tsx                # TV view
+│   └── Player.tsx              # Phone view
 ├── components/
-│   ├── KlotskiBoard.jsx        # Renders a Klotski board (full or mini)
-│   ├── PlayerCard.jsx          # Host view: one player's mini board + stats
-│   ├── Lobby.jsx               # Host lobby: player list + start button
-│   ├── ResultsBoard.jsx        # Post-game leaderboard
-│   └── SolvedOverlay.jsx       # Player celebration screen
+│   ├── KlotskiBoard.tsx        # Renders a Klotski board (full or mini)
+│   ├── PlayerCard.tsx          # Host view: one player's mini board + stats
+│   ├── Lobby.tsx               # Host lobby: player list + start button
+│   ├── ResultsBoard.tsx        # Post-game leaderboard
+│   └── SolvedOverlay.tsx       # Player celebration screen
 ├── hooks/
-│   ├── useSocket.js            # Subscribe to socket events, auto-cleanup
-│   └── useTimer.js             # Elapsed time ticker
+│   ├── useSocket.ts            # Subscribe to socket events, auto-cleanup
+│   └── useTimer.ts             # Elapsed time ticker
 └── styles/
     ├── global.css
+    ├── App.module.css
     ├── Landing.module.css
     ├── Host.module.css
     ├── Player.module.css
