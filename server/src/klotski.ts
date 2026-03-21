@@ -1,26 +1,21 @@
 import type { PuzzleState, Piece } from './types.js';
 
-// Classic Klotski layout:
-// A = 2×2 red (cols 0-1, rows 0-1)
-// B = 2×1 vert blue (col 2, rows 0-1)
+// Classic Huarong Pass layout (Klotski):
+// A = 2×2 red  (cols 1-2, rows 0-1)  ← the key piece, starts top-center
+// B = 2×1 vert blue   (col 0, rows 0-1)
 // C = 2×1 vert purple (col 3, rows 0-1)
-// D = 2×1 vert green (col 0, rows 2-3)
+// D = 2×1 vert green  (col 0, rows 2-3)
 // E = 1×2 horiz orange (cols 1-2, row 2)
-// F = 2×1 vert teal (col 3, rows 2-3)
-// G = 2×1 vert amber (col 1, rows 3-4)
-// H = 2×1 vert pink (col 2, rows 3-4)
+// F = 2×1 vert teal   (col 3, rows 2-3)
+// G = 2×1 vert amber  (col 1, rows 3-4)
+// H = 2×1 vert pink   (col 2, rows 3-4)
 // Empty: (4,0) and (4,3)
+//
+// Win: A reaches (3,1),(3,2),(4,1),(4,2) — drops straight down to the exit.
 
 export function createInitialState(): PuzzleState {
   const pieces: Record<string, Piece> = {
-    A: { id: 'A', cells: [[0,0],[0,1],[1,0],[1,1]] },
-    B: { id: 'B', cells: [[0,2],[1,2]] },
-    C: { id: 'C', cells: [[0,3],[1,3]] },
-    D: { id: 'D', cells: [[2,0],[3,0]] },
-    E: { id: 'E', cells: [[2,1],[2,2]] },
-    F: { id: 'F', cells: [[2,3],[3,3]] },
-    G: { id: 'G', cells: [[3,1],[4,1]] },
-    H: { id: 'H', cells: [[3,2],[4,2]] },
+    A: { id: 'A', cells: [[0,1],[0,2],[1,1],[1,2]] },
   };
 
   const board = buildBoard(pieces);

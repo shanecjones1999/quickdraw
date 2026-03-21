@@ -58,6 +58,10 @@ export function Host({ roomCode }: Props) {
     socket.emit('host:start');
   }
 
+  function endRound() {
+    socket.emit('host:end');
+  }
+
   function resetGame() {
     socket.emit('host:reset');
   }
@@ -76,12 +80,8 @@ export function Host({ roomCode }: Props) {
         {phase === 'lobby' && (
           <div className={styles.lobby}>
             <div className={styles.lobbyTitle}>Waiting for players…</div>
-            <div className={styles.roomCode} style={{ fontSize: '3rem', letterSpacing: '0.4em' }}>
-              {roomCode}
-            </div>
-            <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: '0.9rem' }}>
-              Players go to this URL and enter the code
-            </div>
+            <div className={styles.roomCodeBig}>{roomCode}</div>
+            <div className={styles.lobbyHint}>Players go to this URL and enter the code</div>
             <div className={styles.playerList}>
               {players.length === 0
                 ? <div className={styles.noPlayers}>No players yet</div>
@@ -102,15 +102,17 @@ export function Host({ roomCode }: Props) {
 
         {phase === 'playing' && (
           <>
-            <div className={styles.timer}>{formatTime(now)}</div>
+            <div className={styles.timerRow}>
+              <div className={styles.timer}>{formatTime(now)}</div>
+              <button type="button" className={styles.endBtn} onClick={endRound}>End Round</button>
+            </div>
             <div className={styles.grid}>
               {players.map(p => (
                 <PlayerCard
                   key={p.id}
                   name={p.name}
                   snapshot={progress.get(p.id) ?? null}
-                  gameStartTime={gameStartTime}
-                  now={Date.now()}
+                  elapsedMs={now}
                 />
               ))}
             </div>

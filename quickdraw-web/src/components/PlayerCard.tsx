@@ -5,13 +5,10 @@ import { formatTime } from '../hooks/useTimer';
 interface Props {
   name: string;
   snapshot: ProgressSnapshot | null;
-  gameStartTime: number | null;
-  now: number;
+  elapsedMs: number; // live elapsed time from host timer
 }
 
-export function PlayerCard({ name, snapshot, gameStartTime, now }: Props) {
-  const elapsed = gameStartTime ? now - gameStartTime : 0;
-
+export function PlayerCard({ name, snapshot, elapsedMs }: Props) {
   return (
     <div style={{
       background: 'rgba(255,255,255,0.05)',
@@ -24,7 +21,7 @@ export function PlayerCard({ name, snapshot, gameStartTime, now }: Props) {
       gap: '0.5rem',
     }}>
       <div style={{ fontWeight: 600, fontSize: '1rem', color: snapshot?.solved ? '#2ecc71' : '#fff' }}>
-        {snapshot?.solved && `🥇 `}{name}
+        {snapshot?.solved ? '✅ ' : ''}{name}
       </div>
       {snapshot ? (
         <>
@@ -32,7 +29,7 @@ export function PlayerCard({ name, snapshot, gameStartTime, now }: Props) {
           <div style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.5)' }}>
             {snapshot.solved
               ? `✓ ${formatTime(snapshot.solveTime ?? 0)} · ${snapshot.moves} moves`
-              : `${snapshot.moves} moves · ${formatTime(elapsed)}`}
+              : `${snapshot.moves} moves · ${formatTime(elapsedMs)}`}
           </div>
         </>
       ) : (

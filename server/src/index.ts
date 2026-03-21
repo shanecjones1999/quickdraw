@@ -139,6 +139,14 @@ io.on('connection', (socket) => {
     }
   });
 
+  // ── Host ends the round early ───────────────────────────────────
+  socket.on('host:end', () => {
+    const room = getRoomBySocket(socket.id);
+    if (!room || room.hostSocketId !== socket.id) return;
+    if (room.phase !== 'playing') return;
+    endGame(room.code);
+  });
+
   // ── Host resets the room ────────────────────────────────────────
   socket.on('host:reset', () => {
     const room = getRoomBySocket(socket.id);

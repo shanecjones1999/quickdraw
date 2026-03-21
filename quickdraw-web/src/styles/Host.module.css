@@ -78,6 +78,18 @@
   font-size: 1rem;
 }
 
+.roomCodeBig {
+  font-family: 'Russo One', sans-serif;
+  font-size: 3rem;
+  letter-spacing: 0.4em;
+  color: #fff;
+}
+
+.lobbyHint {
+  color: rgba(255,255,255,0.4);
+  font-size: 0.9rem;
+}
+
 .noPlayers {
   color: rgba(255,255,255,0.3);
   font-size: 1rem;
@@ -100,6 +112,30 @@
 .startBtn:disabled { opacity: 0.4; cursor: not-allowed; }
 
 /* Playing */
+.timerRow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.endBtn {
+  background: rgba(255,255,255,0.08);
+  color: rgba(255,255,255,0.5);
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 0.4rem 1rem;
+  border-radius: 0.4rem;
+  border: 1px solid rgba(255,255,255,0.15);
+  transition: background 0.2s, color 0.2s;
+}
+
+.endBtn:hover {
+  background: rgba(255,255,255,0.14);
+  color: #fff;
+}
+
 .grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));

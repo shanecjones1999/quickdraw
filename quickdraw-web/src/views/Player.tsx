@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect } from 'react';
 import { socket } from '../socket';
 import { useSocket } from '../hooks/useSocket';
 import { useTimer, formatTime } from '../hooks/useTimer';
+import { useCellSize } from '../hooks/useCellSize';
 import { KlotskiBoard } from '../components/KlotskiBoard';
 import type { Piece, Direction, Result } from '../types';
 import styles from '../styles/Player.module.css';
@@ -23,6 +24,7 @@ export function Player({ roomCode, playerName }: Props) {
   const [results, setResults] = useState<Result[]>([]);
   const [startTime, setStartTime] = useState<number | null>(null);
   const elapsed = useTimer(startTime);
+  const cellSize = useCellSize();
 
   const onGameStarted = useCallback(({ pieces: p }: { board: (string | null)[][]; pieces: Record<string, Piece> }) => {
     setPieces(p);
@@ -109,7 +111,7 @@ export function Player({ roomCode, playerName }: Props) {
           <>
             <KlotskiBoard
               pieces={pieces}
-              cellSize={72}
+              cellSize={cellSize}
               selectedPiece={selectedPiece}
               onPieceSelect={setSelectedPiece}
               onMove={move}
