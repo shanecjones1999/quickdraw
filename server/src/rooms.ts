@@ -19,6 +19,7 @@ export function createRoom(hostSocketId: string): Room {
     hostSocketId,
     players: new Map(),
     phase: 'lobby',
+    gameType: 'klotski',
     gameStartTime: null,
     finishOrder: [],
   };

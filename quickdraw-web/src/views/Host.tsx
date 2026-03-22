@@ -3,8 +3,12 @@ import { socket } from '../socket';
 import { useSocket } from '../hooks/useSocket';
 import { useTimer, formatTime } from '../hooks/useTimer';
 import { PlayerCard } from '../components/PlayerCard';
+import { BowmanPlayerCard } from '../components/BowmanPlayerCard';
 import { ResultsBoard } from '../components/ResultsBoard';
-import type { PlayerInfo, ProgressSnapshot, Result } from '../types';
+import type {
+  PlayerInfo, ProgressSnapshot, Result,
+  GameType, BowmanProgressSnapshot, BowmanResult,
+} from '../types';
 import styles from '../styles/Host.module.css';
 
 type Phase = 'lobby' | 'playing' | 'results';
@@ -13,11 +17,17 @@ interface Props {
   roomCode: string;
 }
 
+const MEDALS = ['🥇', '🥈', '🥉'];
+
+
 export function Host({ roomCode }: Props) {
-  const [phase, setPhase] = useState<Phase>('lobby');
-  const [players, setPlayers] = useState<PlayerInfo[]>([]);
-  const [progress, setProgress] = useState<Map<string, ProgressSnapshot>>(new Map());
-  const [results, setResults] = useState<Result[]>([]);
+  const [phase,         setPhase]         = useState<Phase>('lobby');
+  const [players,       setPlayers]       = useState<PlayerInfo[]>([]);
+  const [gameType,      setGameTypeState] = useState<GameType>('klotski');
+  const [progress,      setProgress]      = useState<Map<string, ProgressSnapshot>>(new Map());
+  const [bowmanProg,    setBowmanProg]    = useState<Map<string, BowmanProgressSnapshot>>(new Map());
+  const [results,       setResults]       = useState<Result[]>([]);
+  const [bowmanResults, setBowmanResults] = useState<BowmanResult[]>([]);
   const [gameStartTime, setGameStartTime] = useState<number | null>(null);
   const now = useTimer(gameStartTime);
 
@@ -25,9 +35,15 @@ export function Host({ roomCode }: Props) {
     setPlayers(p);
   }, []);
 
-  const onGameStarted = useCallback(() => {
+  const onRoomGameType = useCallback(({ gameType: gt }: { gameType: GameType }) => {
+    setGameTypeState(gt);
+  }, []);
+
+  const onGameStarted = useCallback(({ gameType: gt }: { gameType: GameType }) => {
+    setGameTypeState(gt);
     setPhase('playing');
     setProgress(new Map());
+    setBowmanProg(new Map());
     setGameStartTime(Date.now());
   }, []);
 
@@ -35,36 +51,44 @@ export function Host({ roomCode }: Props) {
     setProgress(prev => new Map(prev).set(snap.playerId, snap));
   }, []);
 
-  const onGameOver = useCallback(({ results: r }: { results: Result[] }) => {
-    setPhase('results');
-    setResults(r);
-    setGameStartTime(null);
+  const onBowmanProgress = useCallback((snap: BowmanProgressSnapshot) => {
+    setBowmanProg(prev => new Map(prev).set(snap.playerId, snap));
   }, []);
+
+  const onGameOver = useCallback(
+    ({ results: r, gameType: gt }: { results: never; gameType: GameType }) => {
+      setPhase('results');
+      setGameTypeState(gt);
+      if (gt === 'bowman') setBowmanResults(r);
+      else                 setResults(r);
+      setGameStartTime(null);
+    }, []);
 
   const onGameReset = useCallback(() => {
     setPhase('lobby');
     setProgress(new Map());
+    setBowmanProg(new Map());
     setResults([]);
+    setBowmanResults([]);
     setGameStartTime(null);
   }, []);
 
-  useSocket('room:updated', onRoomUpdated as never);
-  useSocket('game:started', onGameStarted as never);
+  useSocket('room:updated',    onRoomUpdated    as never);
+  useSocket('room:gameType',   onRoomGameType   as never);
+  useSocket('game:started',    onGameStarted    as never);
   useSocket('player:progress', onPlayerProgress as never);
-  useSocket('game:over', onGameOver as never);
-  useSocket('game:reset', onGameReset as never);
+  useSocket('bowman:progress', onBowmanProgress as never);
+  useSocket('game:over',       onGameOver       as never);
+  useSocket('game:reset',      onGameReset      as never);
 
-  function startGame() {
-    socket.emit('host:start');
+  function selectGameType(gt: GameType) {
+    setGameTypeState(gt);
+    socket.emit('host:setGameType', { gameType: gt });
   }
 
-  function endRound() {
-    socket.emit('host:end');
-  }
-
-  function resetGame() {
-    socket.emit('host:reset');
-  }
+  function startGame() { socket.emit('host:start'); }
+  function endRound()  { socket.emit('host:end');   }
+  function resetGame() { socket.emit('host:reset'); }
 
   return (
     <div className={styles.page}>
@@ -77,11 +101,28 @@ export function Host({ roomCode }: Props) {
       </header>
 
       <div className={styles.content}>
+
+        {/* ── Lobby ───────────────────────────────────────── */}
         {phase === 'lobby' && (
           <div className={styles.lobby}>
             <div className={styles.lobbyTitle}>Waiting for players…</div>
             <div className={styles.roomCodeBig}>{roomCode}</div>
             <div className={styles.lobbyHint}>Players go to this URL and enter the code</div>
+
+            {/* Game type selector */}
+            <div className={styles.gameSelector}>
+              {(['klotski', 'bowman'] as GameType[]).map(gt => (
+                <button
+                  key={gt}
+                  type="button"
+                  className={gameType === gt ? styles.gameSelected : styles.gameOption}
+                  onClick={() => selectGameType(gt)}
+                >
+                  {gt === 'klotski' ? '🧩 Klotski' : '🏹 Bowman'}
+                </button>
+              ))}
+            </div>
+
             <div className={styles.playerList}>
               {players.length === 0
                 ? <div className={styles.noPlayers}>No players yet</div>
@@ -90,7 +131,9 @@ export function Host({ roomCode }: Props) {
                   ))
               }
             </div>
+
             <button
+              type="button"
               className={styles.startBtn}
               onClick={startGame}
               disabled={players.length === 0}
@@ -100,6 +143,7 @@ export function Host({ roomCode }: Props) {
           </div>
         )}
 
+        {/* ── Playing ─────────────────────────────────────── */}
         {phase === 'playing' && (
           <>
             <div className={styles.timerRow}>
@@ -108,22 +152,56 @@ export function Host({ roomCode }: Props) {
             </div>
             <div className={styles.grid}>
               {players.map(p => (
-                <PlayerCard
-                  key={p.id}
-                  name={p.name}
-                  snapshot={progress.get(p.id) ?? null}
-                  elapsedMs={now}
-                />
+                gameType === 'bowman'
+                  ? <BowmanPlayerCard
+                      key={p.id}
+                      name={p.name}
+                      snapshot={bowmanProg.get(p.id) ?? null}
+                    />
+                  : <PlayerCard
+                      key={p.id}
+                      name={p.name}
+                      snapshot={progress.get(p.id) ?? null}
+                      elapsedMs={now}
+                    />
               ))}
             </div>
           </>
         )}
 
+        {/* ── Results ─────────────────────────────────────── */}
         {phase === 'results' && (
           <div className={styles.results}>
             <div className={styles.resultsTitle}>🏆 Results</div>
-            <ResultsBoard results={results} />
-            <button className={styles.resetBtn} onClick={resetGame}>
+
+            {gameType === 'bowman' ? (
+              <div className={styles.bowmanResults}>
+                {bowmanResults.map((r, i) => (
+                  <div key={r.id} className={styles.bowmanResultRow}>
+                    <span className={styles.bowmanResultRank}>
+                      {r.rank !== null && r.rank <= 3 ? MEDALS[r.rank - 1] : r.rank ?? '—'}
+                    </span>
+                    <span className={styles.bowmanResultName}>{r.name}</span>
+                    <span className={styles.bowmanResultDots}>
+                      {r.shots.map((s, si) => (
+                        <span
+                          key={si}
+                          className={styles.bowmanDot}
+                          data-ring={s.ring}
+                        >
+                          {s.score}
+                        </span>
+                      ))}
+                    </span>
+                    <span className={styles.bowmanResultScore}>{r.totalScore} pts</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <ResultsBoard results={results} />
+            )}
+
+            <button type="button" className={styles.resetBtn} onClick={resetGame}>
               Play Again
             </button>
           </div>

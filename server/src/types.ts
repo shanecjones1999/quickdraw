@@ -1,3 +1,7 @@
+import type { BowmanState, ShotResult } from './bowman.js';
+
+export type GameType = 'klotski' | 'bowman';
+
 export interface Piece {
   id: string;
   cells: [number, number][]; // [row, col]
@@ -16,6 +20,7 @@ export interface Player {
   id: string; // socketId
   name: string;
   puzzleState: PuzzleState | null;
+  bowmanState: BowmanState | null;
   rank: number | null;
 }
 
@@ -24,6 +29,16 @@ export interface Room {
   hostSocketId: string;
   players: Map<string, Player>;
   phase: 'lobby' | 'playing' | 'results';
+  gameType: GameType;
   gameStartTime: number | null;
   finishOrder: string[];
+}
+
+export interface BowmanProgressSnapshot {
+  playerId:   string;
+  shots:      ShotResult[];
+  totalScore: number;
+  done:       boolean;
+  finishTime: number | null;
+  wind:       number;
 }

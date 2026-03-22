@@ -177,3 +177,104 @@
 }
 
 .resetBtn:hover { background: rgba(255,255,255,0.18); }
+
+/* Game type selector */
+.gameSelector {
+  display: flex;
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+}
+
+.gameOption {
+  padding: 0.6rem 1.4rem;
+  border-radius: 2rem;
+  border: 2px solid rgba(255,255,255,0.2);
+  background: transparent;
+  color: rgba(255,255,255,0.6);
+  font-family: 'Russo One', sans-serif;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.gameOption:hover {
+  border-color: rgba(255,215,0,0.5);
+  color: rgba(255,215,0,0.8);
+}
+
+.gameSelected {
+  padding: 0.6rem 1.4rem;
+  border-radius: 2rem;
+  border: 2px solid #ffd700;
+  background: rgba(255,215,0,0.15);
+  color: #ffd700;
+  font-family: 'Russo One', sans-serif;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+/* Bowman results */
+.bowmanResults {
+  width: 100%;
+  max-width: 520px;
+}
+
+.bowmanResultRow {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.85rem 1rem;
+  border-radius: 0.5rem;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.08);
+  margin-bottom: 0.5rem;
+}
+
+.bowmanResultRow:first-child {
+  background: rgba(255,215,0,0.1);
+  border-color: rgba(255,215,0,0.3);
+}
+
+.bowmanResultRank {
+  font-size: 1.5rem;
+  width: 2rem;
+}
+
+.bowmanResultName {
+  flex: 1;
+  font-weight: 600;
+  font-size: 1.1rem;
+}
+
+.bowmanResultDots {
+  display: flex;
+  gap: 0.3rem;
+}
+
+.bowmanDot {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.65rem;
+  font-weight: 700;
+  color: #000;
+  background: #aaa;
+}
+
+.bowmanDot[data-ring="bullseye"] { background: #ffd700; }
+.bowmanDot[data-ring="inner"]    { background: #2ecc71; }
+.bowmanDot[data-ring="middle"]   { background: #3498db; }
+.bowmanDot[data-ring="outer"]    { background: #e67e22; }
+.bowmanDot[data-ring="miss"]     { background: #e74c3c; }
+
+.bowmanResultScore {
+  color: #ffd700;
+  font-weight: 700;
+  font-size: 1.1rem;
+  min-width: 50px;
+  text-align: right;
+}

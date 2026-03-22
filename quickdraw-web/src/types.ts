@@ -1,3 +1,7 @@
+export type GameType = 'klotski' | 'bowman';
+
+// ─── Klotski ─────────────────────────────────────────────────────────────────
+
 export interface Piece {
   id: string;
   cells: [number, number][];
@@ -28,3 +32,32 @@ export interface Result {
 }
 
 export type Direction = 'up' | 'down' | 'left' | 'right';
+
+// ─── Bowman ──────────────────────────────────────────────────────────────────
+
+export interface ShotResult {
+  angle:                number;
+  power:                number;
+  landingY:             number;
+  distanceFromBullseye: number;
+  score:                number;
+  ring:                 string;
+}
+
+export interface BowmanProgressSnapshot {
+  playerId:   string;
+  shots:      ShotResult[];
+  totalScore: number;
+  done:       boolean;
+  finishTime: number | null;
+  wind:       number;
+}
+
+export interface BowmanResult {
+  id:         string;
+  name:       string;
+  rank:       number | null;
+  totalScore: number;
+  finishTime: number | null;
+  shots:      ShotResult[];
+}

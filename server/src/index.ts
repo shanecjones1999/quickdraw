@@ -6,6 +6,8 @@ import { dirname, join } from 'path';
 import { createRoom, getRoom, getRoomBySocket, deleteRoom } from './rooms.js';
 import { createInitialState, applyMove } from './klotski.js';
 import type { Direction } from './klotski.js';
+import { createBowmanState, processShot, MAX_SHOTS } from './bowman.js';
+import type { GameType } from './types.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -33,6 +35,17 @@ io.on('connection', (socket) => {
     console.log(`[host:create] room ${room.code}`);
   });
 
+  // ── Host selects game type ───────────────────────────────────────
+  socket.on('host:setGameType', ({ gameType }: { gameType: GameType }) => {
+    const room = getRoomBySocket(socket.id);
+    if (!room || room.hostSocketId !== socket.id) return;
+    if (room.phase !== 'lobby') return;
+    if (gameType !== 'klotski' && gameType !== 'bowman') return;
+    room.gameType = gameType;
+    io.to(room.code).emit('room:gameType', { gameType });
+    console.log(`[host:setGameType] room ${room.code} → ${gameType}`);
+  });
+
   // ── Player joins a room ─────────────────────────────────────────
   socket.on('player:join', ({ roomCode, playerName }: { roomCode: string; playerName: string }) => {
     const code = roomCode.toUpperCase().trim();
@@ -55,6 +68,7 @@ io.on('connection', (socket) => {
       id: socket.id,
       name: playerName.trim().slice(0, 16),
       puzzleState: null,
+      bowmanState: null,
       rank: null,
     };
     room.players.set(socket.id, player);
@@ -62,6 +76,8 @@ io.on('connection', (socket) => {
 
     const players = [...room.players.values()].map(({ id, name, rank }) => ({ id, name, rank }));
     io.to(code).emit('room:updated', { players });
+    // Also tell the joining player the current game type
+    socket.emit('room:gameType', { gameType: room.gameType });
     console.log(`[player:join] ${player.name} → ${code}`);
   });
 
@@ -75,25 +91,36 @@ io.on('connection', (socket) => {
     room.gameStartTime = Date.now();
     room.finishOrder = [];
 
-    // Give each player a fresh puzzle state
-    for (const player of room.players.values()) {
-      player.puzzleState = createInitialState();
-      player.rank = null;
+    if (room.gameType === 'klotski') {
+      for (const player of room.players.values()) {
+        player.puzzleState = createInitialState();
+        player.rank = null;
+      }
+      const initialState = createInitialState();
+      io.to(room.code).emit('game:started', {
+        gameType: 'klotski',
+        board: initialState.board,
+        pieces: initialState.pieces,
+      });
+    } else {
+      const sharedWind = 0;
+      for (const player of room.players.values()) {
+        player.bowmanState = createBowmanState(sharedWind);
+        player.rank = null;
+      }
+      io.to(room.code).emit('game:started', {
+        gameType: 'bowman',
+        wind: sharedWind,
+      });
     }
 
-    // Send the initial puzzle to everyone in the room
-    const initialState = createInitialState();
-    io.to(room.code).emit('game:started', {
-      board: initialState.board,
-      pieces: initialState.pieces,
-    });
-    console.log(`[host:start] room ${room.code}`);
+    console.log(`[host:start] room ${room.code} (${room.gameType})`);
   });
 
-  // ── Player submits a move ───────────────────────────────────────
+  // ── Player submits a Klotski move ───────────────────────────────
   socket.on('player:move', ({ pieceId, direction }: { pieceId: string; direction: Direction }) => {
     const room = getRoomBySocket(socket.id);
-    if (!room || room.phase !== 'playing') return;
+    if (!room || room.phase !== 'playing' || room.gameType !== 'klotski') return;
 
     const player = room.players.get(socket.id);
     if (!player?.puzzleState || player.puzzleState.solved) return;
@@ -103,7 +130,6 @@ io.on('connection', (socket) => {
 
     player.puzzleState = state;
 
-    // Send updated state back to the player
     socket.emit('state:update', {
       board: state.board,
       pieces: state.pieces,
@@ -111,12 +137,9 @@ io.on('connection', (socket) => {
       solved: state.solved,
     });
 
-    // Send progress snapshot to the host
     let rank: number | null = null;
     if (state.solved) {
-      if (!room.finishOrder.includes(socket.id)) {
-        room.finishOrder.push(socket.id);
-      }
+      if (!room.finishOrder.includes(socket.id)) room.finishOrder.push(socket.id);
       rank = room.finishOrder.indexOf(socket.id) + 1;
       player.rank = rank;
       socket.emit('puzzle:solved', { rank, moves: state.moves, solveTime: state.solveTime });
@@ -132,11 +155,46 @@ io.on('connection', (socket) => {
       solveTime: state.solveTime,
     });
 
-    // Check if all players solved
     const allSolved = [...room.players.values()].every(p => p.puzzleState?.solved);
-    if (allSolved) {
-      endGame(room.code);
+    if (allSolved) endGame(room.code);
+  });
+
+  // ── Player fires an arrow (Bowman) ──────────────────────────────
+  socket.on('bowman:shot', ({ angle, power }: { angle: number; power: number }) => {
+    const room = getRoomBySocket(socket.id);
+    if (!room || room.phase !== 'playing' || room.gameType !== 'bowman') return;
+
+    const player = room.players.get(socket.id);
+    if (!player?.bowmanState || player.bowmanState.done) return;
+
+    const { ok, state, result } = processShot(player.bowmanState, angle, power);
+    if (!ok || !result) return;
+
+    player.bowmanState = state;
+
+    socket.emit('bowman:result', {
+      result,
+      totalScore: state.totalScore,
+      shotsLeft: MAX_SHOTS - state.shots.length,
+      done: state.done,
+    });
+
+    io.to(room.hostSocketId).emit('bowman:progress', {
+      playerId:   socket.id,
+      shots:      state.shots,
+      totalScore: state.totalScore,
+      done:       state.done,
+      finishTime: state.finishTime,
+      wind:       state.wind,
+    });
+
+    if (state.done && !room.finishOrder.includes(socket.id)) {
+      room.finishOrder.push(socket.id);
+      player.rank = room.finishOrder.indexOf(socket.id) + 1;
     }
+
+    const allDone = [...room.players.values()].every(p => p.bowmanState?.done);
+    if (allDone) endGame(room.code);
   });
 
   // ── Host ends the round early ───────────────────────────────────
@@ -157,6 +215,7 @@ io.on('connection', (socket) => {
     room.finishOrder = [];
     for (const player of room.players.values()) {
       player.puzzleState = null;
+      player.bowmanState = null;
       player.rank = null;
     }
 
@@ -173,7 +232,6 @@ io.on('connection', (socket) => {
     if (!room) return;
 
     if (room.hostSocketId === socket.id) {
-      // Host left — tear down the room
       io.to(room.code).emit('error', { message: 'Host disconnected.' });
       deleteRoom(room.code);
     } else {
@@ -189,21 +247,45 @@ function endGame(roomCode: string) {
   if (!room) return;
   room.phase = 'results';
 
-  const results = [...room.players.values()].map(player => ({
-    id: player.id,
-    name: player.name,
-    rank: player.rank,
-    moves: player.puzzleState?.moves ?? null,
-    solveTime: player.puzzleState?.solveTime ?? null,
-  })).sort((a, b) => {
-    if (a.rank !== null && b.rank !== null) return a.rank - b.rank;
-    if (a.rank !== null) return -1;
-    if (b.rank !== null) return 1;
-    return 0;
-  });
+  let results: object[];
 
-  io.to(roomCode).emit('game:over', { results });
-  console.log(`[game:over] room ${roomCode}`);
+  if (room.gameType === 'bowman') {
+    results = [...room.players.values()]
+      .map(player => ({
+        id:         player.id,
+        name:       player.name,
+        totalScore: player.bowmanState?.totalScore ?? 0,
+        finishTime: player.bowmanState?.finishTime ?? null,
+        shots:      player.bowmanState?.shots ?? [],
+        rank:       null as number | null,
+      }))
+      .sort((a, b) => {
+        if (b.totalScore !== a.totalScore) return b.totalScore - a.totalScore;
+        if (a.finishTime !== null && b.finishTime !== null) return a.finishTime - b.finishTime;
+        if (a.finishTime !== null) return -1;
+        if (b.finishTime !== null) return 1;
+        return 0;
+      })
+      .map((r, i) => ({ ...r, rank: i + 1 }));
+  } else {
+    results = [...room.players.values()]
+      .map(player => ({
+        id:        player.id,
+        name:      player.name,
+        rank:      player.rank,
+        moves:     player.puzzleState?.moves ?? null,
+        solveTime: player.puzzleState?.solveTime ?? null,
+      }))
+      .sort((a, b) => {
+        if (a.rank !== null && b.rank !== null) return a.rank - b.rank;
+        if (a.rank !== null) return -1;
+        if (b.rank !== null) return 1;
+        return 0;
+      });
+  }
+
+  io.to(roomCode).emit('game:over', { results, gameType: room.gameType });
+  console.log(`[game:over] room ${roomCode} (${room.gameType})`);
 }
 
 const PORT = process.env.PORT ?? 3001;

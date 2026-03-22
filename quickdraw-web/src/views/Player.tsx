@@ -4,36 +4,52 @@ import { useSocket } from '../hooks/useSocket';
 import { useTimer, formatTime } from '../hooks/useTimer';
 import { useCellSize } from '../hooks/useCellSize';
 import { KlotskiBoard } from '../components/KlotskiBoard';
-import type { Piece, Direction, Result } from '../types';
+import { BowmanPlayer } from './BowmanPlayer';
+import type { Piece, Direction, Result, GameType } from '../types';
 import styles from '../styles/Player.module.css';
 
 type Phase = 'waiting' | 'playing' | 'solved' | 'results';
 
 interface Props {
-  roomCode: string;
+  roomCode:   string;
   playerName: string;
 }
 
 export function Player({ roomCode, playerName }: Props) {
-  const [phase, setPhase] = useState<Phase>('waiting');
-  const [pieces, setPieces] = useState<Record<string, Piece> | null>(null);
+  const [gameType,      setGameType]      = useState<GameType>('klotski');
+  const [phase,         setPhase]         = useState<Phase>('waiting');
+  const [bowmanWind,    setBowmanWind]    = useState(0);
+  const [pieces,        setPieces]        = useState<Record<string, Piece> | null>(null);
   const [selectedPiece, setSelectedPiece] = useState<string | null>(null);
-  const [moves, setMoves] = useState(0);
-  const [rank, setRank] = useState<number | null>(null);
-  const [solveTime, setSolveTime] = useState<number | null>(null);
-  const [results, setResults] = useState<Result[]>([]);
-  const [startTime, setStartTime] = useState<number | null>(null);
-  const elapsed = useTimer(startTime);
+  const [moves,         setMoves]         = useState(0);
+  const [rank,          setRank]          = useState<number | null>(null);
+  const [solveTime,     setSolveTime]     = useState<number | null>(null);
+  const [results,       setResults]       = useState<Result[]>([]);
+  const [startTime,     setStartTime]     = useState<number | null>(null);
+  const elapsed  = useTimer(startTime);
   const cellSize = useCellSize();
 
-  const onGameStarted = useCallback(({ pieces: p }: { board: (string | null)[][]; pieces: Record<string, Piece> }) => {
-    setPieces(p);
-    setMoves(0);
-    setSelectedPiece(null);
-    setSolveTime(null);
-    setRank(null);
-    setStartTime(Date.now());
-    setPhase('playing');
+  // Sync game type when host changes it in the lobby
+  const onRoomGameType = useCallback(({ gameType: gt }: { gameType: GameType }) => {
+    setGameType(gt);
+  }, []);
+
+  const onGameStarted = useCallback((
+    { gameType: gt, pieces: p, wind: w }: { gameType: GameType; board: (string | null)[][]; pieces: Record<string, Piece>; wind?: number }
+  ) => {
+    setGameType(gt);
+    if (gt === 'klotski') {
+      setPieces(p);
+      setMoves(0);
+      setSelectedPiece(null);
+      setSolveTime(null);
+      setRank(null);
+      setStartTime(Date.now());
+      setPhase('playing');
+    } else {
+      setBowmanWind(w ?? 0);
+      setPhase('playing');
+    }
   }, []);
 
   const onStateUpdate = useCallback(({ pieces: p, moves: m }: { board: (string | null)[][]; pieces: Record<string, Piece>; moves: number; solved: boolean }) => {
@@ -63,19 +79,20 @@ export function Player({ roomCode, playerName }: Props) {
     setResults([]);
   }, []);
 
-  useSocket('game:started', onGameStarted as never);
-  useSocket('state:update', onStateUpdate as never);
+  useSocket('room:gameType', onRoomGameType as never);
+  useSocket('game:started',  onGameStarted  as never);
+  useSocket('state:update',  onStateUpdate  as never);
   useSocket('puzzle:solved', onPuzzleSolved as never);
-  useSocket('game:over', onGameOver as never);
-  useSocket('game:reset', onGameReset as never);
+  useSocket('game:over',     onGameOver     as never);
+  useSocket('game:reset',    onGameReset    as never);
 
   function move(pieceId: string, direction: Direction) {
     socket.emit('player:move', { pieceId, direction });
   }
 
-  // Keyboard controls
+  // Keyboard controls for Klotski
   useEffect(() => {
-    if (phase !== 'playing') return;
+    if (phase !== 'playing' || gameType !== 'klotski') return;
     function onKey(e: KeyboardEvent) {
       const dirs: Record<string, Direction> = {
         ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right',
@@ -88,8 +105,17 @@ export function Player({ roomCode, playerName }: Props) {
     }
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [phase, selectedPiece]);
+  }, [phase, gameType, selectedPiece]);
 
+  // ── Bowman: hand off to dedicated view ───────────────────────────────────
+  // BowmanPlayer is always mounted but hidden when not active, so it can
+  // subscribe to socket events immediately on join (game type may not be
+  // known until game:started arrives).
+  if (gameType === 'bowman' && phase !== 'waiting') {
+    return <BowmanPlayer roomCode={roomCode} playerName={playerName} initialWind={bowmanWind} />;
+  }
+
+  // ── Klotski (and waiting-room shared by both games) ──────────────────────
   const MEDALS = ['🥇', '🥈', '🥉'];
 
   return (
