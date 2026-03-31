@@ -1,0 +1,52 @@
+.card {
+  background: #1e1e2e;
+  border: 1px solid #333;
+  border-radius: 10px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  min-width: 230px;
+}
+
+.header {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.name {
+  color: #eee;
+  font-weight: 600;
+  font-size: 0.9em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.done {
+  color: #4caf50;
+  font-size: 0.8em;
+  font-weight: 600;
+}
+
+.stats {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  color: #aaa;
+  font-size: 0.8em;
+}
+
+.rank {
+  color: #ffd700;
+  font-weight: 700;
+}
+
+.waiting {
+  color: #666;
+  font-size: 0.85em;
+  padding: 20px;
+}

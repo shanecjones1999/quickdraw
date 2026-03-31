@@ -1,0 +1,58 @@
+.wrapper {
+  position: relative;
+  background: #f5f0e8;
+  border: 3px solid #555;
+  border-radius: 4px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+  touch-action: none;
+  user-select: none;
+}
+
+.grid {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+}
+
+.vehicle {
+  position: absolute;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.35);
+  transition: box-shadow 0.1s;
+  touch-action: none;
+}
+
+.vehicle:active,
+.dragging {
+  box-shadow: 0 4px 14px rgba(0,0,0,0.5);
+}
+
+.redCar {
+  border: 2px solid rgba(255,255,255,0.4);
+}
+
+.label {
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.85em;
+  text-shadow: 0 1px 3px rgba(0,0,0,0.5);
+  pointer-events: none;
+}
+
+.solvedOverlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0,0,0,0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 1.8em;
+  font-weight: 700;
+  border-radius: 2px;
+  pointer-events: none;
+}
