@@ -1,0 +1,64 @@
+.card {
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 0.85rem;
+  padding: 0.85rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.name {
+  color: #fff;
+  font-weight: 600;
+}
+
+.done {
+  color: #2ecc71;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.failed {
+  color: #ff7b72;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.latestWrap {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.latestLabel,
+.stats,
+.waiting {
+  color: rgba(255,255,255,0.6);
+  font-size: 0.8rem;
+}
+
+.stats {
+  display: flex;
+  justify-content: space-between;
+}
+
+.latestCell {
+  min-width: 28px;
+  height: 28px;
+  padding: 0 0.5rem;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(180deg, #7c5cff, #4da3ff);
+  color: #fff;
+  font-weight: 700;
+}

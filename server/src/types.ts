@@ -1,6 +1,10 @@
 import type { BowmanState, ShotResult } from "./bowman.js";
 import type { CodebreakerState, CodebreakerGuess } from "./codebreaker.js";
 import type { LightsOutState } from "./lightsout.js";
+import type {
+    MemorySequencePlusCell,
+    MemorySequencePlusState,
+} from "./memorysequenceplus.js";
 import type { PipeConnectState, PipeConnectPublicTile } from "./pipeconnect.js";
 import type { RushHourState } from "./rushhour.js";
 import type { SimonCopyState, SimonCopyColor } from "./simoncopy.js";
@@ -13,7 +17,8 @@ export type GameType =
     | "lightsout"
     | "codebreaker"
     | "pipeconnect"
-    | "simoncopy";
+    | "simoncopy"
+    | "memorysequenceplus";
 
 export interface Piece {
     id: string;
@@ -39,6 +44,7 @@ export interface Player {
     codebreakerState: CodebreakerState | null;
     pipeConnectState: PipeConnectState | null;
     simonCopyState: SimonCopyState | null;
+    memorySequencePlusState: MemorySequencePlusState | null;
     rank: number | null;
 }
 
@@ -96,4 +102,14 @@ export interface SimonCopyProgressSnapshot {
     failed: boolean;
     finishTime: number | null;
     latestColor: SimonCopyColor | null;
+}
+
+export interface MemorySequencePlusProgressSnapshot {
+    playerId: string;
+    currentRound: number;
+    solved: boolean;
+    done: boolean;
+    failed: boolean;
+    finishTime: number | null;
+    latestCell: MemorySequencePlusCell | null;
 }

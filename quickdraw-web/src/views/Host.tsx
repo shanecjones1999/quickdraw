@@ -6,6 +6,7 @@ import { PlayerCard } from "../components/PlayerCard";
 import { BowmanPlayerCard } from "../components/BowmanPlayerCard";
 import { CodebreakerPlayerCard } from "../components/CodebreakerPlayerCard";
 import { LightsOutPlayerCard } from "../components/LightsOutPlayerCard";
+import { MemorySequencePlusPlayerCard } from "../components/MemorySequencePlusPlayerCard";
 import { PipeConnectPlayerCard } from "../components/PipeConnectPlayerCard";
 import { RushHourPlayerCard } from "../components/RushHourPlayerCard";
 import { SimonCopyPlayerCard } from "../components/SimonCopyPlayerCard";
@@ -21,6 +22,8 @@ import type {
     CodebreakerResult,
     LightsOutProgressSnapshot,
     LightsOutResult,
+    MemorySequencePlusProgressSnapshot,
+    MemorySequencePlusResult,
     PipeConnectProgressSnapshot,
     PipeConnectResult,
     RushHourProgressSnapshot,
@@ -60,6 +63,9 @@ export function Host({ roomCode }: Props) {
     const [simonCopyProg, setSimonCopyProg] = useState<
         Map<string, SimonCopyProgressSnapshot>
     >(new Map());
+    const [memorySequencePlusProg, setMemorySequencePlusProg] = useState<
+        Map<string, MemorySequencePlusProgressSnapshot>
+    >(new Map());
     const [results, setResults] = useState<Result[]>([]);
     const [bowmanResults, setBowmanResults] = useState<BowmanResult[]>([]);
     const [codebreakerResults, setCodebreakerResults] = useState<
@@ -74,6 +80,9 @@ export function Host({ roomCode }: Props) {
     const [simonCopyResults, setSimonCopyResults] = useState<SimonCopyResult[]>(
         [],
     );
+    const [memorySequencePlusResults, setMemorySequencePlusResults] = useState<
+        MemorySequencePlusResult[]
+    >([]);
     const [rushHourProg, setRushHourProg] = useState<
         Map<string, RushHourProgressSnapshot>
     >(new Map());
@@ -107,6 +116,7 @@ export function Host({ roomCode }: Props) {
             setLightsOutProg(new Map());
             setPipeConnectProg(new Map());
             setSimonCopyProg(new Map());
+            setMemorySequencePlusProg(new Map());
             setRushHourProg(new Map());
             setGameStartTime(Date.now());
         },
@@ -153,6 +163,15 @@ export function Host({ roomCode }: Props) {
         [],
     );
 
+    const onMemorySequencePlusProgress = useCallback(
+        (snap: MemorySequencePlusProgressSnapshot) => {
+            setMemorySequencePlusProg((prev) =>
+                new Map(prev).set(snap.playerId, snap),
+            );
+        },
+        [],
+    );
+
     const onRushHourProgress = useCallback((snap: RushHourProgressSnapshot) => {
         setRushHourProg((prev) => new Map(prev).set(snap.playerId, snap));
     }, []);
@@ -172,7 +191,9 @@ export function Host({ roomCode }: Props) {
             else if (gt === "lightsout") setLightsOutResults(r);
             else if (gt === "pipeconnect") setPipeConnectResults(r);
             else if (gt === "simoncopy") setSimonCopyResults(r);
-            else if (gt === "rushhour") setRushHourResults(r);
+            else if (gt === "memorysequenceplus") {
+                setMemorySequencePlusResults(r);
+            } else if (gt === "rushhour") setRushHourResults(r);
             else setResults(r);
             setGameStartTime(null);
         },
@@ -187,6 +208,7 @@ export function Host({ roomCode }: Props) {
         setLightsOutProg(new Map());
         setPipeConnectProg(new Map());
         setSimonCopyProg(new Map());
+        setMemorySequencePlusProg(new Map());
         setRushHourProg(new Map());
         setResults([]);
         setBowmanResults([]);
@@ -194,6 +216,7 @@ export function Host({ roomCode }: Props) {
         setLightsOutResults([]);
         setPipeConnectResults([]);
         setSimonCopyResults([]);
+        setMemorySequencePlusResults([]);
         setRushHourResults([]);
         setGameStartTime(null);
     }, []);
@@ -207,6 +230,10 @@ export function Host({ roomCode }: Props) {
     useSocket("lightsout:progress", onLightsOutProgress as never);
     useSocket("pipeconnect:progress", onPipeConnectProgress as never);
     useSocket("simoncopy:progress", onSimonCopyProgress as never);
+    useSocket(
+        "memorysequenceplus:progress",
+        onMemorySequencePlusProgress as never,
+    );
     useSocket("rushhour:progress", onRushHourProgress as never);
     useSocket("game:over", onGameOver as never);
     useSocket("game:reset", onGameReset as never);
@@ -259,6 +286,7 @@ export function Host({ roomCode }: Props) {
                                     "codebreaker",
                                     "pipeconnect",
                                     "simoncopy",
+                                    "memorysequenceplus",
                                     "rushhour",
                                     "lightsout",
                                 ] as GameType[]
@@ -283,9 +311,11 @@ export function Host({ roomCode }: Props) {
                                               ? "🪠 Pipe Connect"
                                               : gt === "simoncopy"
                                                 ? "🟡 Simon Copy"
-                                                : gt === "rushhour"
-                                                  ? "🚗 Rush Hour"
-                                                  : "💡 Lights Out"}
+                                                : gt === "memorysequenceplus"
+                                                  ? "🧠 Memory Sequence+"
+                                                  : gt === "rushhour"
+                                                    ? "🚗 Rush Hour"
+                                                    : "💡 Lights Out"}
                                 </button>
                             ))}
                         </div>
@@ -371,6 +401,15 @@ export function Host({ roomCode }: Props) {
                                         name={p.name}
                                         snapshot={
                                             simonCopyProg.get(p.id) ?? null
+                                        }
+                                    />
+                                ) : gameType === "memorysequenceplus" ? (
+                                    <MemorySequencePlusPlayerCard
+                                        key={p.id}
+                                        name={p.name}
+                                        snapshot={
+                                            memorySequencePlusProg.get(p.id) ??
+                                            null
                                         }
                                     />
                                 ) : gameType === "rushhour" ? (
@@ -529,6 +568,35 @@ export function Host({ roomCode }: Props) {
                         ) : gameType === "simoncopy" ? (
                             <div className={styles.bowmanResults}>
                                 {simonCopyResults.map((r) => (
+                                    <div
+                                        key={r.id}
+                                        className={styles.bowmanResultRow}
+                                    >
+                                        <span
+                                            className={styles.bowmanResultRank}
+                                        >
+                                            {r.rank !== null && r.rank <= 3
+                                                ? MEDALS[r.rank - 1]
+                                                : (r.rank ?? "—")}
+                                        </span>
+                                        <span
+                                            className={styles.bowmanResultName}
+                                        >
+                                            {r.name}
+                                        </span>
+                                        <span
+                                            className={styles.bowmanResultScore}
+                                        >
+                                            {r.solved
+                                                ? `Round ${r.roundReached}`
+                                                : `Out at ${r.roundReached}`}
+                                        </span>
+                                    </div>
+                                ))}
+                            </div>
+                        ) : gameType === "memorysequenceplus" ? (
+                            <div className={styles.bowmanResults}>
+                                {memorySequencePlusResults.map((r) => (
                                     <div
                                         key={r.id}
                                         className={styles.bowmanResultRow}

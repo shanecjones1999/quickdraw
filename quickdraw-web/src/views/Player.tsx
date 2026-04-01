@@ -7,11 +7,13 @@ import { KlotskiBoard } from "../components/KlotskiBoard";
 import { BowmanPlayer } from "./BowmanPlayer";
 import { CodebreakerPlayer } from "./CodebreakerPlayer";
 import { LightsOutPlayer } from "./LightsOutPlayer";
+import { MemorySequencePlusPlayer } from "./MemorySequencePlusPlayer";
 import { PipeConnectPlayer } from "./PipeConnectPlayer";
 import { RushHourPlayer } from "./RushHourPlayer";
 import { SimonCopyPlayer } from "./SimonCopyPlayer";
 import type {
     CodebreakerConfig,
+    MemorySequencePlusConfig,
     Piece,
     PipeConnectTile,
     SimonCopyConfig,
@@ -37,6 +39,8 @@ export function Player({ roomCode, playerName }: Props) {
         useState<CodebreakerConfig | null>(null);
     const [simonCopyConfig, setSimonCopyConfig] =
         useState<SimonCopyConfig | null>(null);
+    const [memorySequencePlusConfig, setMemorySequencePlusConfig] =
+        useState<MemorySequencePlusConfig | null>(null);
     const [lightsOutBoard, setLightsOutBoard] = useState<boolean[][] | null>(
         null,
     );
@@ -77,6 +81,7 @@ export function Player({ roomCode, playerName }: Props) {
             maxGuesses,
             sequence,
             colors,
+            gridSize,
             maxRounds,
         }: {
             gameType: GameType;
@@ -88,8 +93,9 @@ export function Player({ roomCode, playerName }: Props) {
             palette?: string[];
             codeLength?: number;
             maxGuesses?: number;
-            sequence?: ("red" | "blue" | "green" | "yellow")[];
+            sequence?: number[] | ("red" | "blue" | "green" | "yellow")[];
             colors?: ("red" | "blue" | "green" | "yellow")[];
+            gridSize?: number;
             maxRounds?: number;
         }) => {
             setGameType(gt);
@@ -110,9 +116,18 @@ export function Player({ roomCode, playerName }: Props) {
                 setPhase("playing");
             } else if (gt === "simoncopy") {
                 setSimonCopyConfig({
-                    sequence: sequence ?? [],
+                    sequence:
+                        (sequence as ("red" | "blue" | "green" | "yellow")[]) ??
+                        [],
                     colors: colors ?? ["red", "blue", "green", "yellow"],
                     maxRounds: maxRounds ?? 6,
+                });
+                setPhase("playing");
+            } else if (gt === "memorysequenceplus") {
+                setMemorySequencePlusConfig({
+                    sequence: (sequence as number[]) ?? [],
+                    gridSize: gridSize ?? 3,
+                    maxRounds: maxRounds ?? 8,
                 });
                 setPhase("playing");
             } else if (gt === "pipeconnect") {
@@ -176,6 +191,7 @@ export function Player({ roomCode, playerName }: Props) {
         setPhase("waiting");
         setCodebreakerConfig(null);
         setSimonCopyConfig(null);
+        setMemorySequencePlusConfig(null);
         setPieces(null);
         setLightsOutBoard(null);
         setPipeConnectTiles(null);
@@ -261,6 +277,22 @@ export function Player({ roomCode, playerName }: Props) {
                 sequence={simonCopyConfig.sequence}
                 colors={simonCopyConfig.colors}
                 maxRounds={simonCopyConfig.maxRounds}
+            />
+        );
+    }
+
+    if (
+        gameType === "memorysequenceplus" &&
+        phase !== "waiting" &&
+        memorySequencePlusConfig
+    ) {
+        return (
+            <MemorySequencePlusPlayer
+                roomCode={roomCode}
+                playerName={playerName}
+                sequence={memorySequencePlusConfig.sequence}
+                gridSize={memorySequencePlusConfig.gridSize}
+                maxRounds={memorySequencePlusConfig.maxRounds}
             />
         );
     }

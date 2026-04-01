@@ -16,6 +16,12 @@ import {
 } from "./codebreaker.js";
 import { createLightsOutState, applyLightsOutMove } from "./lightsout.js";
 import {
+    MEMORY_SEQUENCE_PLUS_GRID_SIZE,
+    MEMORY_SEQUENCE_PLUS_MAX_ROUNDS,
+    createMemorySequencePlusState,
+    submitMemorySequencePlusRound,
+} from "./memorysequenceplus.js";
+import {
     PIPE_CONNECT_PUZZLE_COUNT,
     applyPipeConnectRotate,
     createPipeConnectState,
@@ -68,7 +74,8 @@ io.on("connection", (socket) => {
             gameType !== "lightsout" &&
             gameType !== "codebreaker" &&
             gameType !== "pipeconnect" &&
-            gameType !== "simoncopy"
+            gameType !== "simoncopy" &&
+            gameType !== "memorysequenceplus"
         )
             return;
         room.gameType = gameType;
@@ -112,6 +119,7 @@ io.on("connection", (socket) => {
                 codebreakerState: null,
                 pipeConnectState: null,
                 simonCopyState: null,
+                memorySequencePlusState: null,
                 rank: null,
             };
             room.players.set(socket.id, player);
@@ -212,7 +220,7 @@ io.on("connection", (socket) => {
                 gameType: "pipeconnect",
                 tiles: toPublicPipeConnectTiles(initialState.tiles),
             });
-        } else {
+        } else if (room.gameType === "simoncopy") {
             const initialState = createSimonCopyState();
             for (const player of room.players.values()) {
                 player.simonCopyState = createSimonCopyState(
@@ -225,6 +233,20 @@ io.on("connection", (socket) => {
                 sequence: initialState.sequence,
                 maxRounds: SIMON_COPY_MAX_ROUNDS,
                 colors: [...SIMON_COPY_COLORS],
+            });
+        } else if (room.gameType === "memorysequenceplus") {
+            const initialState = createMemorySequencePlusState();
+            for (const player of room.players.values()) {
+                player.memorySequencePlusState = createMemorySequencePlusState(
+                    initialState.sequence,
+                );
+                player.rank = null;
+            }
+            io.to(room.code).emit("game:started", {
+                gameType: "memorysequenceplus",
+                sequence: initialState.sequence,
+                maxRounds: MEMORY_SEQUENCE_PLUS_MAX_ROUNDS,
+                gridSize: MEMORY_SEQUENCE_PLUS_GRID_SIZE,
             });
         }
 
@@ -620,6 +642,73 @@ io.on("connection", (socket) => {
         if (allDone) endGame(room.code);
     });
 
+    // ── Player submits a Memory Sequence Plus round ──────────────
+    socket.on(
+        "memorysequenceplus:submit",
+        ({ inputs }: { inputs: number[] }) => {
+            const room = getRoomBySocket(socket.id);
+            if (
+                !room ||
+                room.phase !== "playing" ||
+                room.gameType !== "memorysequenceplus"
+            )
+                return;
+
+            const player = room.players.get(socket.id);
+            if (
+                !player?.memorySequencePlusState ||
+                player.memorySequencePlusState.done
+            )
+                return;
+
+            const latestCell = inputs.at(-1) ?? null;
+            const { ok, state } = submitMemorySequencePlusRound(
+                player.memorySequencePlusState,
+                inputs,
+            );
+            if (!ok) return;
+
+            player.memorySequencePlusState = state;
+
+            socket.emit("memorysequenceplus:update", {
+                currentRound: state.currentRound,
+                solved: state.solved,
+                done: state.done,
+                failed: state.failed,
+                finishTime: state.finishTime,
+            });
+
+            let rank: number | null = null;
+            if (state.solved) {
+                if (!room.finishOrder.includes(socket.id)) {
+                    room.finishOrder.push(socket.id);
+                }
+                rank = room.finishOrder.indexOf(socket.id) + 1;
+                player.rank = rank;
+                socket.emit("memorysequenceplus:solved", {
+                    rank,
+                    roundReached: state.currentRound,
+                    finishTime: state.finishTime,
+                });
+            }
+
+            io.to(room.hostSocketId).emit("memorysequenceplus:progress", {
+                playerId: socket.id,
+                currentRound: state.currentRound,
+                solved: state.solved,
+                done: state.done,
+                failed: state.failed,
+                finishTime: state.finishTime,
+                latestCell,
+            });
+
+            const allDone = [...room.players.values()].every(
+                (p) => p.memorySequencePlusState?.done,
+            );
+            if (allDone) endGame(room.code);
+        },
+    );
+
     // ── Host ends the round early ───────────────────────────────────
     socket.on("host:end", () => {
         const room = getRoomBySocket(socket.id);
@@ -644,6 +733,7 @@ io.on("connection", (socket) => {
             player.codebreakerState = null;
             player.pipeConnectState = null;
             player.simonCopyState = null;
+            player.memorySequencePlusState = null;
             player.rank = null;
         }
 
@@ -783,6 +873,33 @@ function endGame(roomCode: string) {
                 finishTime: player.simonCopyState?.finishTime ?? null,
                 solved: player.simonCopyState?.solved ?? false,
                 failed: player.simonCopyState?.failed ?? false,
+            }))
+            .sort((a, b) => {
+                if (a.solved !== b.solved) return a.solved ? -1 : 1;
+                if (a.solved && b.solved) {
+                    if (a.finishTime !== null && b.finishTime !== null) {
+                        return a.finishTime - b.finishTime;
+                    }
+                    if (a.finishTime !== null) return -1;
+                    if (b.finishTime !== null) return 1;
+                }
+                return b.roundReached - a.roundReached;
+            });
+
+        let nextRank = 1;
+        results = ranked.map((entry) => ({
+            ...entry,
+            rank: entry.solved ? nextRank++ : null,
+        }));
+    } else if (room.gameType === "memorysequenceplus") {
+        const ranked = [...room.players.values()]
+            .map((player) => ({
+                id: player.id,
+                name: player.name,
+                roundReached: player.memorySequencePlusState?.currentRound ?? 1,
+                finishTime: player.memorySequencePlusState?.finishTime ?? null,
+                solved: player.memorySequencePlusState?.solved ?? false,
+                failed: player.memorySequencePlusState?.failed ?? false,
             }))
             .sort((a, b) => {
                 if (a.solved !== b.solved) return a.solved ? -1 : 1;

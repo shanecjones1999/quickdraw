@@ -5,7 +5,8 @@ export type GameType =
     | "lightsout"
     | "codebreaker"
     | "pipeconnect"
-    | "simoncopy";
+    | "simoncopy"
+    | "memorysequenceplus";
 
 // ─── Klotski ─────────────────────────────────────────────────────────────────
 
@@ -188,6 +189,34 @@ export interface SimonCopyProgressSnapshot {
 }
 
 export interface SimonCopyResult {
+    id: string;
+    name: string;
+    rank: number | null;
+    roundReached: number;
+    finishTime: number | null;
+    solved: boolean;
+    failed: boolean;
+}
+
+// ─── Memory Sequence Plus ───────────────────────────────────────────────────
+
+export interface MemorySequencePlusConfig {
+    sequence: number[];
+    gridSize: number;
+    maxRounds: number;
+}
+
+export interface MemorySequencePlusProgressSnapshot {
+    playerId: string;
+    currentRound: number;
+    solved: boolean;
+    done: boolean;
+    failed: boolean;
+    finishTime: number | null;
+    latestCell: number | null;
+}
+
+export interface MemorySequencePlusResult {
     id: string;
     name: string;
     rank: number | null;
