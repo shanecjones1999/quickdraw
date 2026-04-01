@@ -7,6 +7,13 @@ import { createRoom, getRoom, getRoomBySocket, deleteRoom } from "./rooms.js";
 import { createInitialState, applyMove } from "./klotski.js";
 import type { Direction } from "./klotski.js";
 import { createBowmanState, processShot, MAX_SHOTS } from "./bowman.js";
+import {
+    CODEBREAKER_CODE_LENGTH,
+    CODEBREAKER_MAX_GUESSES,
+    CODEBREAKER_PALETTE,
+    createCodebreakerState,
+    processCodebreakerGuess,
+} from "./codebreaker.js";
 import { createLightsOutState, applyLightsOutMove } from "./lightsout.js";
 import { createRushHourState, applyRushHourMove } from "./rushhour.js";
 import type { GameType } from "./types.js";
@@ -46,7 +53,8 @@ io.on("connection", (socket) => {
             gameType !== "klotski" &&
             gameType !== "bowman" &&
             gameType !== "rushhour" &&
-            gameType !== "lightsout"
+            gameType !== "lightsout" &&
+            gameType !== "codebreaker"
         )
             return;
         room.gameType = gameType;
@@ -87,6 +95,7 @@ io.on("connection", (socket) => {
                 bowmanState: null,
                 rushHourState: null,
                 lightsOutState: null,
+                codebreakerState: null,
                 rank: null,
             };
             room.players.set(socket.id, player);
@@ -145,7 +154,7 @@ io.on("connection", (socket) => {
                 vehicles: sample.vehicles,
                 puzzleIndex,
             });
-        } else {
+        } else if (room.gameType === "lightsout") {
             const initialState = createLightsOutState();
             for (const player of room.players.values()) {
                 player.lightsOutState = createLightsOutState(
@@ -156,6 +165,20 @@ io.on("connection", (socket) => {
             io.to(room.code).emit("game:started", {
                 gameType: "lightsout",
                 board: initialState.board,
+            });
+        } else {
+            const initialState = createCodebreakerState();
+            for (const player of room.players.values()) {
+                player.codebreakerState = createCodebreakerState(
+                    initialState.secret,
+                );
+                player.rank = null;
+            }
+            io.to(room.code).emit("game:started", {
+                gameType: "codebreaker",
+                palette: [...CODEBREAKER_PALETTE],
+                codeLength: CODEBREAKER_CODE_LENGTH,
+                maxGuesses: CODEBREAKER_MAX_GUESSES,
             });
         }
 
@@ -389,6 +412,56 @@ io.on("connection", (socket) => {
         },
     );
 
+    // ── Player submits a Codebreaker guess ───────────────────────
+    socket.on("codebreaker:guess", ({ guess }: { guess: string[] }) => {
+        const room = getRoomBySocket(socket.id);
+        if (
+            !room ||
+            room.phase !== "playing" ||
+            room.gameType !== "codebreaker"
+        )
+            return;
+
+        const player = room.players.get(socket.id);
+        if (!player?.codebreakerState || player.codebreakerState.done) return;
+
+        const { ok, state } = processCodebreakerGuess(
+            player.codebreakerState,
+            guess,
+        );
+        if (!ok) return;
+
+        player.codebreakerState = state;
+
+        socket.emit("codebreaker:update", {
+            guesses: state.guesses,
+            solved: state.solved,
+            done: state.done,
+            finishTime: state.finishTime,
+        });
+
+        if (state.solved) {
+            socket.emit("codebreaker:solved", {
+                attempts: state.guesses.length,
+                finishTime: state.finishTime,
+            });
+        }
+
+        io.to(room.hostSocketId).emit("codebreaker:progress", {
+            playerId: socket.id,
+            attempts: state.guesses.length,
+            solved: state.solved,
+            done: state.done,
+            finishTime: state.finishTime,
+            lastGuess: state.guesses.at(-1) ?? null,
+        });
+
+        const allDone = [...room.players.values()].every(
+            (p) => p.codebreakerState?.done,
+        );
+        if (allDone) endGame(room.code);
+    });
+
     // ── Host ends the round early ───────────────────────────────────
     socket.on("host:end", () => {
         const room = getRoomBySocket(socket.id);
@@ -410,6 +483,7 @@ io.on("connection", (socket) => {
             player.bowmanState = null;
             player.rushHourState = null;
             player.lightsOutState = null;
+            player.codebreakerState = null;
             player.rank = null;
         }
 
@@ -497,6 +571,34 @@ function endGame(roomCode: string) {
                 if (b.rank !== null) return 1;
                 return 0;
             });
+    } else if (room.gameType === "codebreaker") {
+        const ranked = [...room.players.values()]
+            .map((player) => ({
+                id: player.id,
+                name: player.name,
+                attempts: player.codebreakerState?.guesses.length ?? 0,
+                finishTime: player.codebreakerState?.finishTime ?? null,
+                solved: player.codebreakerState?.solved ?? false,
+            }))
+            .sort((a, b) => {
+                if (a.solved !== b.solved) return a.solved ? -1 : 1;
+                if (a.solved && b.solved) {
+                    if (a.attempts !== b.attempts)
+                        return a.attempts - b.attempts;
+                    if (a.finishTime !== null && b.finishTime !== null) {
+                        return a.finishTime - b.finishTime;
+                    }
+                    if (a.finishTime !== null) return -1;
+                    if (b.finishTime !== null) return 1;
+                }
+                return a.attempts - b.attempts;
+            });
+
+        let nextRank = 1;
+        results = ranked.map((entry) => ({
+            ...entry,
+            rank: entry.solved ? nextRank++ : null,
+        }));
     } else {
         results = [...room.players.values()]
             .map((player) => ({

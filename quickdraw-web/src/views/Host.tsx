@@ -4,6 +4,7 @@ import { useSocket } from "../hooks/useSocket";
 import { useTimer, formatTime } from "../hooks/useTimer";
 import { PlayerCard } from "../components/PlayerCard";
 import { BowmanPlayerCard } from "../components/BowmanPlayerCard";
+import { CodebreakerPlayerCard } from "../components/CodebreakerPlayerCard";
 import { LightsOutPlayerCard } from "../components/LightsOutPlayerCard";
 import { RushHourPlayerCard } from "../components/RushHourPlayerCard";
 import { ResultsBoard } from "../components/ResultsBoard";
@@ -14,6 +15,8 @@ import type {
     GameType,
     BowmanProgressSnapshot,
     BowmanResult,
+    CodebreakerProgressSnapshot,
+    CodebreakerResult,
     LightsOutProgressSnapshot,
     LightsOutResult,
     RushHourProgressSnapshot,
@@ -39,11 +42,17 @@ export function Host({ roomCode }: Props) {
     const [bowmanProg, setBowmanProg] = useState<
         Map<string, BowmanProgressSnapshot>
     >(new Map());
+    const [codebreakerProg, setCodebreakerProg] = useState<
+        Map<string, CodebreakerProgressSnapshot>
+    >(new Map());
     const [lightsOutProg, setLightsOutProg] = useState<
         Map<string, LightsOutProgressSnapshot>
     >(new Map());
     const [results, setResults] = useState<Result[]>([]);
     const [bowmanResults, setBowmanResults] = useState<BowmanResult[]>([]);
+    const [codebreakerResults, setCodebreakerResults] = useState<
+        CodebreakerResult[]
+    >([]);
     const [lightsOutResults, setLightsOutResults] = useState<LightsOutResult[]>(
         [],
     );
@@ -76,6 +85,7 @@ export function Host({ roomCode }: Props) {
             setPhase("playing");
             setProgress(new Map());
             setBowmanProg(new Map());
+            setCodebreakerProg(new Map());
             setLightsOutProg(new Map());
             setRushHourProg(new Map());
             setGameStartTime(Date.now());
@@ -90,6 +100,15 @@ export function Host({ roomCode }: Props) {
     const onBowmanProgress = useCallback((snap: BowmanProgressSnapshot) => {
         setBowmanProg((prev) => new Map(prev).set(snap.playerId, snap));
     }, []);
+
+    const onCodebreakerProgress = useCallback(
+        (snap: CodebreakerProgressSnapshot) => {
+            setCodebreakerProg((prev) =>
+                new Map(prev).set(snap.playerId, snap),
+            );
+        },
+        [],
+    );
 
     const onLightsOutProgress = useCallback(
         (snap: LightsOutProgressSnapshot) => {
@@ -113,6 +132,7 @@ export function Host({ roomCode }: Props) {
             setPhase("results");
             setGameTypeState(gt);
             if (gt === "bowman") setBowmanResults(r);
+            else if (gt === "codebreaker") setCodebreakerResults(r);
             else if (gt === "lightsout") setLightsOutResults(r);
             else if (gt === "rushhour") setRushHourResults(r);
             else setResults(r);
@@ -125,10 +145,12 @@ export function Host({ roomCode }: Props) {
         setPhase("lobby");
         setProgress(new Map());
         setBowmanProg(new Map());
+        setCodebreakerProg(new Map());
         setLightsOutProg(new Map());
         setRushHourProg(new Map());
         setResults([]);
         setBowmanResults([]);
+        setCodebreakerResults([]);
         setLightsOutResults([]);
         setRushHourResults([]);
         setGameStartTime(null);
@@ -139,6 +161,7 @@ export function Host({ roomCode }: Props) {
     useSocket("game:started", onGameStarted as never);
     useSocket("player:progress", onPlayerProgress as never);
     useSocket("bowman:progress", onBowmanProgress as never);
+    useSocket("codebreaker:progress", onCodebreakerProgress as never);
     useSocket("lightsout:progress", onLightsOutProgress as never);
     useSocket("rushhour:progress", onRushHourProgress as never);
     useSocket("game:over", onGameOver as never);
@@ -189,6 +212,7 @@ export function Host({ roomCode }: Props) {
                                 [
                                     "klotski",
                                     "bowman",
+                                    "codebreaker",
                                     "rushhour",
                                     "lightsout",
                                 ] as GameType[]
@@ -207,9 +231,11 @@ export function Host({ roomCode }: Props) {
                                         ? "🧩 Klotski"
                                         : gt === "bowman"
                                           ? "🏹 Bowman"
-                                          : gt === "rushhour"
-                                            ? "🚗 Rush Hour"
-                                            : "💡 Lights Out"}
+                                          : gt === "codebreaker"
+                                            ? "🔐 Codebreaker"
+                                            : gt === "rushhour"
+                                              ? "🚗 Rush Hour"
+                                              : "💡 Lights Out"}
                                 </button>
                             ))}
                         </div>
@@ -264,6 +290,14 @@ export function Host({ roomCode }: Props) {
                                         key={p.id}
                                         name={p.name}
                                         snapshot={bowmanProg.get(p.id) ?? null}
+                                    />
+                                ) : gameType === "codebreaker" ? (
+                                    <CodebreakerPlayerCard
+                                        key={p.id}
+                                        name={p.name}
+                                        snapshot={
+                                            codebreakerProg.get(p.id) ?? null
+                                        }
                                     />
                                 ) : gameType === "lightsout" ? (
                                     <LightsOutPlayerCard
@@ -335,6 +369,35 @@ export function Host({ roomCode }: Props) {
                                             className={styles.bowmanResultScore}
                                         >
                                             {r.totalScore} pts
+                                        </span>
+                                    </div>
+                                ))}
+                            </div>
+                        ) : gameType === "codebreaker" ? (
+                            <div className={styles.bowmanResults}>
+                                {codebreakerResults.map((r) => (
+                                    <div
+                                        key={r.id}
+                                        className={styles.bowmanResultRow}
+                                    >
+                                        <span
+                                            className={styles.bowmanResultRank}
+                                        >
+                                            {r.rank !== null && r.rank <= 3
+                                                ? MEDALS[r.rank - 1]
+                                                : (r.rank ?? "—")}
+                                        </span>
+                                        <span
+                                            className={styles.bowmanResultName}
+                                        >
+                                            {r.name}
+                                        </span>
+                                        <span
+                                            className={styles.bowmanResultScore}
+                                        >
+                                            {r.solved
+                                                ? `${r.attempts} guesses`
+                                                : `${r.attempts} used`}
                                         </span>
                                     </div>
                                 ))}

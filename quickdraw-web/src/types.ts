@@ -1,4 +1,9 @@
-export type GameType = "klotski" | "bowman" | "rushhour" | "lightsout";
+export type GameType =
+    | "klotski"
+    | "bowman"
+    | "rushhour"
+    | "lightsout"
+    | "codebreaker";
 
 // ─── Klotski ─────────────────────────────────────────────────────────────────
 
@@ -97,6 +102,38 @@ export interface LightsOutResult {
     rank: number | null;
     moves: number | null;
     finishTime: number | null;
+}
+
+// ─── Codebreaker ────────────────────────────────────────────────────────────
+
+export interface CodebreakerGuess {
+    colors: string[];
+    exact: number;
+    partial: number;
+}
+
+export interface CodebreakerConfig {
+    palette: string[];
+    codeLength: number;
+    maxGuesses: number;
+}
+
+export interface CodebreakerProgressSnapshot {
+    playerId: string;
+    attempts: number;
+    solved: boolean;
+    done: boolean;
+    finishTime: number | null;
+    lastGuess: CodebreakerGuess | null;
+}
+
+export interface CodebreakerResult {
+    id: string;
+    name: string;
+    rank: number | null;
+    attempts: number;
+    finishTime: number | null;
+    solved: boolean;
 }
 
 export interface BowmanResult {

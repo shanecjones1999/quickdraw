@@ -5,9 +5,11 @@ import { useTimer, formatTime } from "../hooks/useTimer";
 import { useCellSize } from "../hooks/useCellSize";
 import { KlotskiBoard } from "../components/KlotskiBoard";
 import { BowmanPlayer } from "./BowmanPlayer";
+import { CodebreakerPlayer } from "./CodebreakerPlayer";
 import { LightsOutPlayer } from "./LightsOutPlayer";
 import { RushHourPlayer } from "./RushHourPlayer";
 import type {
+    CodebreakerConfig,
     Piece,
     Direction,
     Result,
@@ -27,6 +29,8 @@ export function Player({ roomCode, playerName }: Props) {
     const [gameType, setGameType] = useState<GameType>("klotski");
     const [phase, setPhase] = useState<Phase>("waiting");
     const [bowmanWind, setBowmanWind] = useState(0);
+    const [codebreakerConfig, setCodebreakerConfig] =
+        useState<CodebreakerConfig | null>(null);
     const [lightsOutBoard, setLightsOutBoard] = useState<boolean[][] | null>(
         null,
     );
@@ -58,12 +62,18 @@ export function Player({ roomCode, playerName }: Props) {
             wind: w,
             vehicles: v,
             board: b,
+            palette,
+            codeLength,
+            maxGuesses,
         }: {
             gameType: GameType;
             board?: (string | null)[][] | boolean[][];
             pieces?: Record<string, Piece>;
             wind?: number;
             vehicles?: RushHourVehicle[];
+            palette?: string[];
+            codeLength?: number;
+            maxGuesses?: number;
         }) => {
             setGameType(gt);
             if (gt === "klotski") {
@@ -73,6 +83,13 @@ export function Player({ roomCode, playerName }: Props) {
                 setSolveTime(null);
                 setRank(null);
                 setStartTime(Date.now());
+                setPhase("playing");
+            } else if (gt === "codebreaker") {
+                setCodebreakerConfig({
+                    palette: palette ?? [],
+                    codeLength: codeLength ?? 4,
+                    maxGuesses: maxGuesses ?? 8,
+                });
                 setPhase("playing");
             } else if (gt === "lightsout") {
                 setLightsOutBoard((b as boolean[][]) ?? []);
@@ -130,6 +147,7 @@ export function Player({ roomCode, playerName }: Props) {
 
     const onGameReset = useCallback(() => {
         setPhase("waiting");
+        setCodebreakerConfig(null);
         setPieces(null);
         setLightsOutBoard(null);
         setMoves(0);
@@ -176,6 +194,22 @@ export function Player({ roomCode, playerName }: Props) {
                 roomCode={roomCode}
                 playerName={playerName}
                 initialWind={bowmanWind}
+            />
+        );
+    }
+
+    if (
+        gameType === "codebreaker" &&
+        phase !== "waiting" &&
+        codebreakerConfig
+    ) {
+        return (
+            <CodebreakerPlayer
+                roomCode={roomCode}
+                playerName={playerName}
+                palette={codebreakerConfig.palette}
+                codeLength={codebreakerConfig.codeLength}
+                maxGuesses={codebreakerConfig.maxGuesses}
             />
         );
     }

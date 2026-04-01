@@ -1,9 +1,15 @@
 import type { BowmanState, ShotResult } from "./bowman.js";
+import type { CodebreakerState, CodebreakerGuess } from "./codebreaker.js";
 import type { LightsOutState } from "./lightsout.js";
 import type { RushHourState } from "./rushhour.js";
 
 export type { RushHourState };
-export type GameType = "klotski" | "bowman" | "rushhour" | "lightsout";
+export type GameType =
+    | "klotski"
+    | "bowman"
+    | "rushhour"
+    | "lightsout"
+    | "codebreaker";
 
 export interface Piece {
     id: string;
@@ -26,6 +32,7 @@ export interface Player {
     bowmanState: BowmanState | null;
     rushHourState: RushHourState | null;
     lightsOutState: LightsOutState | null;
+    codebreakerState: CodebreakerState | null;
     rank: number | null;
 }
 
@@ -55,4 +62,13 @@ export interface LightsOutProgressSnapshot {
     solved: boolean;
     rank: number | null;
     finishTime: number | null;
+}
+
+export interface CodebreakerProgressSnapshot {
+    playerId: string;
+    attempts: number;
+    solved: boolean;
+    done: boolean;
+    finishTime: number | null;
+    lastGuess: CodebreakerGuess | null;
 }
