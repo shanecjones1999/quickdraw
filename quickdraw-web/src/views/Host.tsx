@@ -8,6 +8,7 @@ import { CodebreakerPlayerCard } from "../components/CodebreakerPlayerCard";
 import { LightsOutPlayerCard } from "../components/LightsOutPlayerCard";
 import { PipeConnectPlayerCard } from "../components/PipeConnectPlayerCard";
 import { RushHourPlayerCard } from "../components/RushHourPlayerCard";
+import { SimonCopyPlayerCard } from "../components/SimonCopyPlayerCard";
 import { ResultsBoard } from "../components/ResultsBoard";
 import type {
     PlayerInfo,
@@ -24,6 +25,8 @@ import type {
     PipeConnectResult,
     RushHourProgressSnapshot,
     RushHourResult,
+    SimonCopyProgressSnapshot,
+    SimonCopyResult,
 } from "../types";
 import styles from "../styles/Host.module.css";
 
@@ -54,6 +57,9 @@ export function Host({ roomCode }: Props) {
     const [pipeConnectProg, setPipeConnectProg] = useState<
         Map<string, PipeConnectProgressSnapshot>
     >(new Map());
+    const [simonCopyProg, setSimonCopyProg] = useState<
+        Map<string, SimonCopyProgressSnapshot>
+    >(new Map());
     const [results, setResults] = useState<Result[]>([]);
     const [bowmanResults, setBowmanResults] = useState<BowmanResult[]>([]);
     const [codebreakerResults, setCodebreakerResults] = useState<
@@ -65,6 +71,9 @@ export function Host({ roomCode }: Props) {
     const [pipeConnectResults, setPipeConnectResults] = useState<
         PipeConnectResult[]
     >([]);
+    const [simonCopyResults, setSimonCopyResults] = useState<SimonCopyResult[]>(
+        [],
+    );
     const [rushHourProg, setRushHourProg] = useState<
         Map<string, RushHourProgressSnapshot>
     >(new Map());
@@ -97,6 +106,7 @@ export function Host({ roomCode }: Props) {
             setCodebreakerProg(new Map());
             setLightsOutProg(new Map());
             setPipeConnectProg(new Map());
+            setSimonCopyProg(new Map());
             setRushHourProg(new Map());
             setGameStartTime(Date.now());
         },
@@ -136,6 +146,13 @@ export function Host({ roomCode }: Props) {
         [],
     );
 
+    const onSimonCopyProgress = useCallback(
+        (snap: SimonCopyProgressSnapshot) => {
+            setSimonCopyProg((prev) => new Map(prev).set(snap.playerId, snap));
+        },
+        [],
+    );
+
     const onRushHourProgress = useCallback((snap: RushHourProgressSnapshot) => {
         setRushHourProg((prev) => new Map(prev).set(snap.playerId, snap));
     }, []);
@@ -154,6 +171,7 @@ export function Host({ roomCode }: Props) {
             else if (gt === "codebreaker") setCodebreakerResults(r);
             else if (gt === "lightsout") setLightsOutResults(r);
             else if (gt === "pipeconnect") setPipeConnectResults(r);
+            else if (gt === "simoncopy") setSimonCopyResults(r);
             else if (gt === "rushhour") setRushHourResults(r);
             else setResults(r);
             setGameStartTime(null);
@@ -168,12 +186,14 @@ export function Host({ roomCode }: Props) {
         setCodebreakerProg(new Map());
         setLightsOutProg(new Map());
         setPipeConnectProg(new Map());
+        setSimonCopyProg(new Map());
         setRushHourProg(new Map());
         setResults([]);
         setBowmanResults([]);
         setCodebreakerResults([]);
         setLightsOutResults([]);
         setPipeConnectResults([]);
+        setSimonCopyResults([]);
         setRushHourResults([]);
         setGameStartTime(null);
     }, []);
@@ -186,6 +206,7 @@ export function Host({ roomCode }: Props) {
     useSocket("codebreaker:progress", onCodebreakerProgress as never);
     useSocket("lightsout:progress", onLightsOutProgress as never);
     useSocket("pipeconnect:progress", onPipeConnectProgress as never);
+    useSocket("simoncopy:progress", onSimonCopyProgress as never);
     useSocket("rushhour:progress", onRushHourProgress as never);
     useSocket("game:over", onGameOver as never);
     useSocket("game:reset", onGameReset as never);
@@ -237,6 +258,7 @@ export function Host({ roomCode }: Props) {
                                     "bowman",
                                     "codebreaker",
                                     "pipeconnect",
+                                    "simoncopy",
                                     "rushhour",
                                     "lightsout",
                                 ] as GameType[]
@@ -259,9 +281,11 @@ export function Host({ roomCode }: Props) {
                                             ? "🔐 Codebreaker"
                                             : gt === "pipeconnect"
                                               ? "🪠 Pipe Connect"
-                                              : gt === "rushhour"
-                                                ? "🚗 Rush Hour"
-                                                : "💡 Lights Out"}
+                                              : gt === "simoncopy"
+                                                ? "🟡 Simon Copy"
+                                                : gt === "rushhour"
+                                                  ? "🚗 Rush Hour"
+                                                  : "💡 Lights Out"}
                                 </button>
                             ))}
                         </div>
@@ -339,6 +363,14 @@ export function Host({ roomCode }: Props) {
                                         name={p.name}
                                         snapshot={
                                             pipeConnectProg.get(p.id) ?? null
+                                        }
+                                    />
+                                ) : gameType === "simoncopy" ? (
+                                    <SimonCopyPlayerCard
+                                        key={p.id}
+                                        name={p.name}
+                                        snapshot={
+                                            simonCopyProg.get(p.id) ?? null
                                         }
                                     />
                                 ) : gameType === "rushhour" ? (
@@ -490,6 +522,35 @@ export function Host({ roomCode }: Props) {
                                             {r.moves !== null
                                                 ? `${r.moves} turns`
                                                 : "DNF"}
+                                        </span>
+                                    </div>
+                                ))}
+                            </div>
+                        ) : gameType === "simoncopy" ? (
+                            <div className={styles.bowmanResults}>
+                                {simonCopyResults.map((r) => (
+                                    <div
+                                        key={r.id}
+                                        className={styles.bowmanResultRow}
+                                    >
+                                        <span
+                                            className={styles.bowmanResultRank}
+                                        >
+                                            {r.rank !== null && r.rank <= 3
+                                                ? MEDALS[r.rank - 1]
+                                                : (r.rank ?? "—")}
+                                        </span>
+                                        <span
+                                            className={styles.bowmanResultName}
+                                        >
+                                            {r.name}
+                                        </span>
+                                        <span
+                                            className={styles.bowmanResultScore}
+                                        >
+                                            {r.solved
+                                                ? `Round ${r.roundReached}`
+                                                : `Out at ${r.roundReached}`}
                                         </span>
                                     </div>
                                 ))}

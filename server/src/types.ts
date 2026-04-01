@@ -3,6 +3,7 @@ import type { CodebreakerState, CodebreakerGuess } from "./codebreaker.js";
 import type { LightsOutState } from "./lightsout.js";
 import type { PipeConnectState, PipeConnectPublicTile } from "./pipeconnect.js";
 import type { RushHourState } from "./rushhour.js";
+import type { SimonCopyState, SimonCopyColor } from "./simoncopy.js";
 
 export type { RushHourState };
 export type GameType =
@@ -11,7 +12,8 @@ export type GameType =
     | "rushhour"
     | "lightsout"
     | "codebreaker"
-    | "pipeconnect";
+    | "pipeconnect"
+    | "simoncopy";
 
 export interface Piece {
     id: string;
@@ -36,6 +38,7 @@ export interface Player {
     lightsOutState: LightsOutState | null;
     codebreakerState: CodebreakerState | null;
     pipeConnectState: PipeConnectState | null;
+    simonCopyState: SimonCopyState | null;
     rank: number | null;
 }
 
@@ -83,4 +86,14 @@ export interface PipeConnectProgressSnapshot {
     solved: boolean;
     rank: number | null;
     finishTime: number | null;
+}
+
+export interface SimonCopyProgressSnapshot {
+    playerId: string;
+    currentRound: number;
+    solved: boolean;
+    done: boolean;
+    failed: boolean;
+    finishTime: number | null;
+    latestColor: SimonCopyColor | null;
 }

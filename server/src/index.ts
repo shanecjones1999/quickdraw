@@ -22,6 +22,12 @@ import {
     toPublicPipeConnectTiles,
 } from "./pipeconnect.js";
 import { createRushHourState, applyRushHourMove } from "./rushhour.js";
+import {
+    SIMON_COPY_COLORS,
+    SIMON_COPY_MAX_ROUNDS,
+    createSimonCopyState,
+    submitSimonCopyRound,
+} from "./simoncopy.js";
 import type { GameType } from "./types.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -61,7 +67,8 @@ io.on("connection", (socket) => {
             gameType !== "rushhour" &&
             gameType !== "lightsout" &&
             gameType !== "codebreaker" &&
-            gameType !== "pipeconnect"
+            gameType !== "pipeconnect" &&
+            gameType !== "simoncopy"
         )
             return;
         room.gameType = gameType;
@@ -104,6 +111,7 @@ io.on("connection", (socket) => {
                 lightsOutState: null,
                 codebreakerState: null,
                 pipeConnectState: null,
+                simonCopyState: null,
                 rank: null,
             };
             room.players.set(socket.id, player);
@@ -188,7 +196,7 @@ io.on("connection", (socket) => {
                 codeLength: CODEBREAKER_CODE_LENGTH,
                 maxGuesses: CODEBREAKER_MAX_GUESSES,
             });
-        } else {
+        } else if (room.gameType === "pipeconnect") {
             const puzzleIndex = Math.floor(
                 Math.random() * PIPE_CONNECT_PUZZLE_COUNT(),
             );
@@ -203,6 +211,20 @@ io.on("connection", (socket) => {
             io.to(room.code).emit("game:started", {
                 gameType: "pipeconnect",
                 tiles: toPublicPipeConnectTiles(initialState.tiles),
+            });
+        } else {
+            const initialState = createSimonCopyState();
+            for (const player of room.players.values()) {
+                player.simonCopyState = createSimonCopyState(
+                    initialState.sequence,
+                );
+                player.rank = null;
+            }
+            io.to(room.code).emit("game:started", {
+                gameType: "simoncopy",
+                sequence: initialState.sequence,
+                maxRounds: SIMON_COPY_MAX_ROUNDS,
+                colors: [...SIMON_COPY_COLORS],
             });
         }
 
@@ -542,6 +564,62 @@ io.on("connection", (socket) => {
         if (allSolved) endGame(room.code);
     });
 
+    // ── Player submits a Simon Copy round ───────────────────────
+    socket.on("simoncopy:submit", ({ inputs }: { inputs: string[] }) => {
+        const room = getRoomBySocket(socket.id);
+        if (!room || room.phase !== "playing" || room.gameType !== "simoncopy")
+            return;
+
+        const player = room.players.get(socket.id);
+        if (!player?.simonCopyState || player.simonCopyState.done) return;
+
+        const latestColor = inputs.at(-1) ?? null;
+        const { ok, state } = submitSimonCopyRound(
+            player.simonCopyState,
+            inputs,
+        );
+        if (!ok) return;
+
+        player.simonCopyState = state;
+
+        socket.emit("simoncopy:update", {
+            currentRound: state.currentRound,
+            solved: state.solved,
+            done: state.done,
+            failed: state.failed,
+            finishTime: state.finishTime,
+        });
+
+        let rank: number | null = null;
+        if (state.solved) {
+            if (!room.finishOrder.includes(socket.id)) {
+                room.finishOrder.push(socket.id);
+            }
+            rank = room.finishOrder.indexOf(socket.id) + 1;
+            player.rank = rank;
+            socket.emit("simoncopy:solved", {
+                rank,
+                roundReached: state.currentRound,
+                finishTime: state.finishTime,
+            });
+        }
+
+        io.to(room.hostSocketId).emit("simoncopy:progress", {
+            playerId: socket.id,
+            currentRound: state.currentRound,
+            solved: state.solved,
+            done: state.done,
+            failed: state.failed,
+            finishTime: state.finishTime,
+            latestColor,
+        });
+
+        const allDone = [...room.players.values()].every(
+            (p) => p.simonCopyState?.done,
+        );
+        if (allDone) endGame(room.code);
+    });
+
     // ── Host ends the round early ───────────────────────────────────
     socket.on("host:end", () => {
         const room = getRoomBySocket(socket.id);
@@ -565,6 +643,7 @@ io.on("connection", (socket) => {
             player.lightsOutState = null;
             player.codebreakerState = null;
             player.pipeConnectState = null;
+            player.simonCopyState = null;
             player.rank = null;
         }
 
@@ -695,6 +774,33 @@ function endGame(roomCode: string) {
                 if (b.rank !== null) return 1;
                 return 0;
             });
+    } else if (room.gameType === "simoncopy") {
+        const ranked = [...room.players.values()]
+            .map((player) => ({
+                id: player.id,
+                name: player.name,
+                roundReached: player.simonCopyState?.currentRound ?? 1,
+                finishTime: player.simonCopyState?.finishTime ?? null,
+                solved: player.simonCopyState?.solved ?? false,
+                failed: player.simonCopyState?.failed ?? false,
+            }))
+            .sort((a, b) => {
+                if (a.solved !== b.solved) return a.solved ? -1 : 1;
+                if (a.solved && b.solved) {
+                    if (a.finishTime !== null && b.finishTime !== null) {
+                        return a.finishTime - b.finishTime;
+                    }
+                    if (a.finishTime !== null) return -1;
+                    if (b.finishTime !== null) return 1;
+                }
+                return b.roundReached - a.roundReached;
+            });
+
+        let nextRank = 1;
+        results = ranked.map((entry) => ({
+            ...entry,
+            rank: entry.solved ? nextRank++ : null,
+        }));
     } else {
         results = [...room.players.values()]
             .map((player) => ({

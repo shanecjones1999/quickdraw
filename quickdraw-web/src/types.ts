@@ -4,7 +4,8 @@ export type GameType =
     | "rushhour"
     | "lightsout"
     | "codebreaker"
-    | "pipeconnect";
+    | "pipeconnect"
+    | "simoncopy";
 
 // ─── Klotski ─────────────────────────────────────────────────────────────────
 
@@ -164,6 +165,36 @@ export interface PipeConnectResult {
     rank: number | null;
     moves: number | null;
     finishTime: number | null;
+}
+
+// ─── Simon Copy ─────────────────────────────────────────────────────────────
+
+export type SimonCopyColor = "red" | "blue" | "green" | "yellow";
+
+export interface SimonCopyConfig {
+    sequence: SimonCopyColor[];
+    maxRounds: number;
+    colors: SimonCopyColor[];
+}
+
+export interface SimonCopyProgressSnapshot {
+    playerId: string;
+    currentRound: number;
+    solved: boolean;
+    done: boolean;
+    failed: boolean;
+    finishTime: number | null;
+    latestColor: SimonCopyColor | null;
+}
+
+export interface SimonCopyResult {
+    id: string;
+    name: string;
+    rank: number | null;
+    roundReached: number;
+    finishTime: number | null;
+    solved: boolean;
+    failed: boolean;
 }
 
 export interface BowmanResult {

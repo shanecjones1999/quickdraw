@@ -9,10 +9,12 @@ import { CodebreakerPlayer } from "./CodebreakerPlayer";
 import { LightsOutPlayer } from "./LightsOutPlayer";
 import { PipeConnectPlayer } from "./PipeConnectPlayer";
 import { RushHourPlayer } from "./RushHourPlayer";
+import { SimonCopyPlayer } from "./SimonCopyPlayer";
 import type {
     CodebreakerConfig,
     Piece,
     PipeConnectTile,
+    SimonCopyConfig,
     Direction,
     Result,
     GameType,
@@ -33,6 +35,8 @@ export function Player({ roomCode, playerName }: Props) {
     const [bowmanWind, setBowmanWind] = useState(0);
     const [codebreakerConfig, setCodebreakerConfig] =
         useState<CodebreakerConfig | null>(null);
+    const [simonCopyConfig, setSimonCopyConfig] =
+        useState<SimonCopyConfig | null>(null);
     const [lightsOutBoard, setLightsOutBoard] = useState<boolean[][] | null>(
         null,
     );
@@ -71,6 +75,9 @@ export function Player({ roomCode, playerName }: Props) {
             palette,
             codeLength,
             maxGuesses,
+            sequence,
+            colors,
+            maxRounds,
         }: {
             gameType: GameType;
             board?: (string | null)[][] | boolean[][];
@@ -81,6 +88,9 @@ export function Player({ roomCode, playerName }: Props) {
             palette?: string[];
             codeLength?: number;
             maxGuesses?: number;
+            sequence?: ("red" | "blue" | "green" | "yellow")[];
+            colors?: ("red" | "blue" | "green" | "yellow")[];
+            maxRounds?: number;
         }) => {
             setGameType(gt);
             if (gt === "klotski") {
@@ -96,6 +106,13 @@ export function Player({ roomCode, playerName }: Props) {
                     palette: palette ?? [],
                     codeLength: codeLength ?? 4,
                     maxGuesses: maxGuesses ?? 8,
+                });
+                setPhase("playing");
+            } else if (gt === "simoncopy") {
+                setSimonCopyConfig({
+                    sequence: sequence ?? [],
+                    colors: colors ?? ["red", "blue", "green", "yellow"],
+                    maxRounds: maxRounds ?? 6,
                 });
                 setPhase("playing");
             } else if (gt === "pipeconnect") {
@@ -158,6 +175,7 @@ export function Player({ roomCode, playerName }: Props) {
     const onGameReset = useCallback(() => {
         setPhase("waiting");
         setCodebreakerConfig(null);
+        setSimonCopyConfig(null);
         setPieces(null);
         setLightsOutBoard(null);
         setPipeConnectTiles(null);
@@ -231,6 +249,18 @@ export function Player({ roomCode, playerName }: Props) {
                 roomCode={roomCode}
                 playerName={playerName}
                 initialBoard={lightsOutBoard}
+            />
+        );
+    }
+
+    if (gameType === "simoncopy" && phase !== "waiting" && simonCopyConfig) {
+        return (
+            <SimonCopyPlayer
+                roomCode={roomCode}
+                playerName={playerName}
+                sequence={simonCopyConfig.sequence}
+                colors={simonCopyConfig.colors}
+                maxRounds={simonCopyConfig.maxRounds}
             />
         );
     }
