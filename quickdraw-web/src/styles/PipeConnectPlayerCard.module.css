@@ -1,0 +1,42 @@
+.card {
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 0.85rem;
+  padding: 0.85rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  align-items: center;
+}
+
+.header {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.name {
+  color: #fff;
+  font-weight: 600;
+}
+
+.done {
+  color: #2ecc71;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.stats {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  color: rgba(255,255,255,0.6);
+  font-size: 0.8rem;
+}
+
+.waiting {
+  color: rgba(255,255,255,0.35);
+  font-size: 0.8rem;
+}

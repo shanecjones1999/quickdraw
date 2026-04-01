@@ -7,10 +7,12 @@ import { KlotskiBoard } from "../components/KlotskiBoard";
 import { BowmanPlayer } from "./BowmanPlayer";
 import { CodebreakerPlayer } from "./CodebreakerPlayer";
 import { LightsOutPlayer } from "./LightsOutPlayer";
+import { PipeConnectPlayer } from "./PipeConnectPlayer";
 import { RushHourPlayer } from "./RushHourPlayer";
 import type {
     CodebreakerConfig,
     Piece,
+    PipeConnectTile,
     Direction,
     Result,
     GameType,
@@ -34,6 +36,9 @@ export function Player({ roomCode, playerName }: Props) {
     const [lightsOutBoard, setLightsOutBoard] = useState<boolean[][] | null>(
         null,
     );
+    const [pipeConnectTiles, setPipeConnectTiles] = useState<
+        PipeConnectTile[] | null
+    >(null);
     const [rushHourVehicles, setRushHourVehicles] = useState<
         RushHourVehicle[] | null
     >(null);
@@ -62,12 +67,14 @@ export function Player({ roomCode, playerName }: Props) {
             wind: w,
             vehicles: v,
             board: b,
+            tiles: t,
             palette,
             codeLength,
             maxGuesses,
         }: {
             gameType: GameType;
             board?: (string | null)[][] | boolean[][];
+            tiles?: PipeConnectTile[];
             pieces?: Record<string, Piece>;
             wind?: number;
             vehicles?: RushHourVehicle[];
@@ -90,6 +97,9 @@ export function Player({ roomCode, playerName }: Props) {
                     codeLength: codeLength ?? 4,
                     maxGuesses: maxGuesses ?? 8,
                 });
+                setPhase("playing");
+            } else if (gt === "pipeconnect") {
+                setPipeConnectTiles(t ?? []);
                 setPhase("playing");
             } else if (gt === "lightsout") {
                 setLightsOutBoard((b as boolean[][]) ?? []);
@@ -150,6 +160,7 @@ export function Player({ roomCode, playerName }: Props) {
         setCodebreakerConfig(null);
         setPieces(null);
         setLightsOutBoard(null);
+        setPipeConnectTiles(null);
         setMoves(0);
         setSelectedPiece(null);
         setStartTime(null);
@@ -220,6 +231,16 @@ export function Player({ roomCode, playerName }: Props) {
                 roomCode={roomCode}
                 playerName={playerName}
                 initialBoard={lightsOutBoard}
+            />
+        );
+    }
+
+    if (gameType === "pipeconnect" && phase !== "waiting" && pipeConnectTiles) {
+        return (
+            <PipeConnectPlayer
+                roomCode={roomCode}
+                playerName={playerName}
+                initialTiles={pipeConnectTiles}
             />
         );
     }

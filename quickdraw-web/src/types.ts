@@ -3,7 +3,8 @@ export type GameType =
     | "bowman"
     | "rushhour"
     | "lightsout"
-    | "codebreaker";
+    | "codebreaker"
+    | "pipeconnect";
 
 // ─── Klotski ─────────────────────────────────────────────────────────────────
 
@@ -134,6 +135,35 @@ export interface CodebreakerResult {
     attempts: number;
     finishTime: number | null;
     solved: boolean;
+}
+
+// ─── Pipe Connect ───────────────────────────────────────────────────────────
+
+export interface PipeConnectTile {
+    id: string;
+    row: number;
+    col: number;
+    mask: number;
+    locked: boolean;
+    start: boolean;
+    end: boolean;
+}
+
+export interface PipeConnectProgressSnapshot {
+    playerId: string;
+    tiles: PipeConnectTile[];
+    moves: number;
+    solved: boolean;
+    rank: number | null;
+    finishTime: number | null;
+}
+
+export interface PipeConnectResult {
+    id: string;
+    name: string;
+    rank: number | null;
+    moves: number | null;
+    finishTime: number | null;
 }
 
 export interface BowmanResult {

@@ -1,0 +1,86 @@
+.board {
+  width: min(100%, 340px);
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.45rem;
+  padding: 0.7rem;
+  border-radius: 1rem;
+  background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.03));
+  border: 1px solid rgba(255,255,255,0.1);
+}
+
+.boardMini {
+  width: 148px;
+  gap: 0.22rem;
+  padding: 0.35rem;
+}
+
+.boardSolved {
+  box-shadow: 0 0 0 1px rgba(46,204,113,0.35), 0 12px 30px rgba(46,204,113,0.12);
+}
+
+.tile {
+  position: relative;
+  aspect-ratio: 1;
+  border: none;
+  border-radius: 0.8rem;
+  background: linear-gradient(180deg, rgba(33,33,66,0.96), rgba(18,18,42,0.96));
+  padding: 0;
+}
+
+.tile:not(:disabled) {
+  cursor: pointer;
+}
+
+.tile:not(:disabled):active {
+  transform: scale(0.97);
+}
+
+.tileLocked {
+  background: linear-gradient(180deg, rgba(53,53,80,0.96), rgba(28,28,44,0.96));
+}
+
+.tileMini {
+  border-radius: 0.45rem;
+}
+
+.pipeSvg {
+  width: 100%;
+  height: 100%;
+}
+
+.pipe {
+  stroke: #6cd8ff;
+  stroke-width: 16;
+  stroke-linecap: round;
+}
+
+.pipeCenter {
+  fill: #6cd8ff;
+}
+
+.badge {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.65rem;
+  font-weight: 700;
+  color: #07111f;
+}
+
+.start {
+  background: #ffd166;
+}
+
+.end {
+  background: #ef476f;
+  left: auto;
+  right: 6px;
+}

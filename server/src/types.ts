@@ -1,6 +1,7 @@
 import type { BowmanState, ShotResult } from "./bowman.js";
 import type { CodebreakerState, CodebreakerGuess } from "./codebreaker.js";
 import type { LightsOutState } from "./lightsout.js";
+import type { PipeConnectState, PipeConnectPublicTile } from "./pipeconnect.js";
 import type { RushHourState } from "./rushhour.js";
 
 export type { RushHourState };
@@ -9,7 +10,8 @@ export type GameType =
     | "bowman"
     | "rushhour"
     | "lightsout"
-    | "codebreaker";
+    | "codebreaker"
+    | "pipeconnect";
 
 export interface Piece {
     id: string;
@@ -33,6 +35,7 @@ export interface Player {
     rushHourState: RushHourState | null;
     lightsOutState: LightsOutState | null;
     codebreakerState: CodebreakerState | null;
+    pipeConnectState: PipeConnectState | null;
     rank: number | null;
 }
 
@@ -71,4 +74,13 @@ export interface CodebreakerProgressSnapshot {
     done: boolean;
     finishTime: number | null;
     lastGuess: CodebreakerGuess | null;
+}
+
+export interface PipeConnectProgressSnapshot {
+    playerId: string;
+    tiles: PipeConnectPublicTile[];
+    moves: number;
+    solved: boolean;
+    rank: number | null;
+    finishTime: number | null;
 }

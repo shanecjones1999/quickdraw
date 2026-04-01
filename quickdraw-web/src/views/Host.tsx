@@ -6,6 +6,7 @@ import { PlayerCard } from "../components/PlayerCard";
 import { BowmanPlayerCard } from "../components/BowmanPlayerCard";
 import { CodebreakerPlayerCard } from "../components/CodebreakerPlayerCard";
 import { LightsOutPlayerCard } from "../components/LightsOutPlayerCard";
+import { PipeConnectPlayerCard } from "../components/PipeConnectPlayerCard";
 import { RushHourPlayerCard } from "../components/RushHourPlayerCard";
 import { ResultsBoard } from "../components/ResultsBoard";
 import type {
@@ -19,6 +20,8 @@ import type {
     CodebreakerResult,
     LightsOutProgressSnapshot,
     LightsOutResult,
+    PipeConnectProgressSnapshot,
+    PipeConnectResult,
     RushHourProgressSnapshot,
     RushHourResult,
 } from "../types";
@@ -48,6 +51,9 @@ export function Host({ roomCode }: Props) {
     const [lightsOutProg, setLightsOutProg] = useState<
         Map<string, LightsOutProgressSnapshot>
     >(new Map());
+    const [pipeConnectProg, setPipeConnectProg] = useState<
+        Map<string, PipeConnectProgressSnapshot>
+    >(new Map());
     const [results, setResults] = useState<Result[]>([]);
     const [bowmanResults, setBowmanResults] = useState<BowmanResult[]>([]);
     const [codebreakerResults, setCodebreakerResults] = useState<
@@ -56,6 +62,9 @@ export function Host({ roomCode }: Props) {
     const [lightsOutResults, setLightsOutResults] = useState<LightsOutResult[]>(
         [],
     );
+    const [pipeConnectResults, setPipeConnectResults] = useState<
+        PipeConnectResult[]
+    >([]);
     const [rushHourProg, setRushHourProg] = useState<
         Map<string, RushHourProgressSnapshot>
     >(new Map());
@@ -87,6 +96,7 @@ export function Host({ roomCode }: Props) {
             setBowmanProg(new Map());
             setCodebreakerProg(new Map());
             setLightsOutProg(new Map());
+            setPipeConnectProg(new Map());
             setRushHourProg(new Map());
             setGameStartTime(Date.now());
         },
@@ -117,6 +127,15 @@ export function Host({ roomCode }: Props) {
         [],
     );
 
+    const onPipeConnectProgress = useCallback(
+        (snap: PipeConnectProgressSnapshot) => {
+            setPipeConnectProg((prev) =>
+                new Map(prev).set(snap.playerId, snap),
+            );
+        },
+        [],
+    );
+
     const onRushHourProgress = useCallback((snap: RushHourProgressSnapshot) => {
         setRushHourProg((prev) => new Map(prev).set(snap.playerId, snap));
     }, []);
@@ -134,6 +153,7 @@ export function Host({ roomCode }: Props) {
             if (gt === "bowman") setBowmanResults(r);
             else if (gt === "codebreaker") setCodebreakerResults(r);
             else if (gt === "lightsout") setLightsOutResults(r);
+            else if (gt === "pipeconnect") setPipeConnectResults(r);
             else if (gt === "rushhour") setRushHourResults(r);
             else setResults(r);
             setGameStartTime(null);
@@ -147,11 +167,13 @@ export function Host({ roomCode }: Props) {
         setBowmanProg(new Map());
         setCodebreakerProg(new Map());
         setLightsOutProg(new Map());
+        setPipeConnectProg(new Map());
         setRushHourProg(new Map());
         setResults([]);
         setBowmanResults([]);
         setCodebreakerResults([]);
         setLightsOutResults([]);
+        setPipeConnectResults([]);
         setRushHourResults([]);
         setGameStartTime(null);
     }, []);
@@ -163,6 +185,7 @@ export function Host({ roomCode }: Props) {
     useSocket("bowman:progress", onBowmanProgress as never);
     useSocket("codebreaker:progress", onCodebreakerProgress as never);
     useSocket("lightsout:progress", onLightsOutProgress as never);
+    useSocket("pipeconnect:progress", onPipeConnectProgress as never);
     useSocket("rushhour:progress", onRushHourProgress as never);
     useSocket("game:over", onGameOver as never);
     useSocket("game:reset", onGameReset as never);
@@ -213,6 +236,7 @@ export function Host({ roomCode }: Props) {
                                     "klotski",
                                     "bowman",
                                     "codebreaker",
+                                    "pipeconnect",
                                     "rushhour",
                                     "lightsout",
                                 ] as GameType[]
@@ -233,9 +257,11 @@ export function Host({ roomCode }: Props) {
                                           ? "🏹 Bowman"
                                           : gt === "codebreaker"
                                             ? "🔐 Codebreaker"
-                                            : gt === "rushhour"
-                                              ? "🚗 Rush Hour"
-                                              : "💡 Lights Out"}
+                                            : gt === "pipeconnect"
+                                              ? "🪠 Pipe Connect"
+                                              : gt === "rushhour"
+                                                ? "🚗 Rush Hour"
+                                                : "💡 Lights Out"}
                                 </button>
                             ))}
                         </div>
@@ -305,6 +331,14 @@ export function Host({ roomCode }: Props) {
                                         name={p.name}
                                         snapshot={
                                             lightsOutProg.get(p.id) ?? null
+                                        }
+                                    />
+                                ) : gameType === "pipeconnect" ? (
+                                    <PipeConnectPlayerCard
+                                        key={p.id}
+                                        name={p.name}
+                                        snapshot={
+                                            pipeConnectProg.get(p.id) ?? null
                                         }
                                     />
                                 ) : gameType === "rushhour" ? (
@@ -426,6 +460,35 @@ export function Host({ roomCode }: Props) {
                                         >
                                             {r.moves !== null
                                                 ? `${r.moves} taps`
+                                                : "DNF"}
+                                        </span>
+                                    </div>
+                                ))}
+                            </div>
+                        ) : gameType === "pipeconnect" ? (
+                            <div className={styles.bowmanResults}>
+                                {pipeConnectResults.map((r) => (
+                                    <div
+                                        key={r.id}
+                                        className={styles.bowmanResultRow}
+                                    >
+                                        <span
+                                            className={styles.bowmanResultRank}
+                                        >
+                                            {r.rank !== null && r.rank <= 3
+                                                ? MEDALS[r.rank - 1]
+                                                : (r.rank ?? "—")}
+                                        </span>
+                                        <span
+                                            className={styles.bowmanResultName}
+                                        >
+                                            {r.name}
+                                        </span>
+                                        <span
+                                            className={styles.bowmanResultScore}
+                                        >
+                                            {r.moves !== null
+                                                ? `${r.moves} turns`
                                                 : "DNF"}
                                         </span>
                                     </div>

@@ -15,6 +15,12 @@ import {
     processCodebreakerGuess,
 } from "./codebreaker.js";
 import { createLightsOutState, applyLightsOutMove } from "./lightsout.js";
+import {
+    PIPE_CONNECT_PUZZLE_COUNT,
+    applyPipeConnectRotate,
+    createPipeConnectState,
+    toPublicPipeConnectTiles,
+} from "./pipeconnect.js";
 import { createRushHourState, applyRushHourMove } from "./rushhour.js";
 import type { GameType } from "./types.js";
 
@@ -54,7 +60,8 @@ io.on("connection", (socket) => {
             gameType !== "bowman" &&
             gameType !== "rushhour" &&
             gameType !== "lightsout" &&
-            gameType !== "codebreaker"
+            gameType !== "codebreaker" &&
+            gameType !== "pipeconnect"
         )
             return;
         room.gameType = gameType;
@@ -96,6 +103,7 @@ io.on("connection", (socket) => {
                 rushHourState: null,
                 lightsOutState: null,
                 codebreakerState: null,
+                pipeConnectState: null,
                 rank: null,
             };
             room.players.set(socket.id, player);
@@ -166,7 +174,7 @@ io.on("connection", (socket) => {
                 gameType: "lightsout",
                 board: initialState.board,
             });
-        } else {
+        } else if (room.gameType === "codebreaker") {
             const initialState = createCodebreakerState();
             for (const player of room.players.values()) {
                 player.codebreakerState = createCodebreakerState(
@@ -179,6 +187,22 @@ io.on("connection", (socket) => {
                 palette: [...CODEBREAKER_PALETTE],
                 codeLength: CODEBREAKER_CODE_LENGTH,
                 maxGuesses: CODEBREAKER_MAX_GUESSES,
+            });
+        } else {
+            const puzzleIndex = Math.floor(
+                Math.random() * PIPE_CONNECT_PUZZLE_COUNT(),
+            );
+            const initialState = createPipeConnectState(puzzleIndex);
+            for (const player of room.players.values()) {
+                player.pipeConnectState = createPipeConnectState(
+                    initialState.puzzleIndex,
+                    initialState.tiles,
+                );
+                player.rank = null;
+            }
+            io.to(room.code).emit("game:started", {
+                gameType: "pipeconnect",
+                tiles: toPublicPipeConnectTiles(initialState.tiles),
             });
         }
 
@@ -462,6 +486,62 @@ io.on("connection", (socket) => {
         if (allDone) endGame(room.code);
     });
 
+    // ── Player rotates a Pipe Connect tile ───────────────────────
+    socket.on("pipeconnect:rotate", ({ tileId }: { tileId: string }) => {
+        const room = getRoomBySocket(socket.id);
+        if (
+            !room ||
+            room.phase !== "playing" ||
+            room.gameType !== "pipeconnect"
+        )
+            return;
+
+        const player = room.players.get(socket.id);
+        if (!player?.pipeConnectState || player.pipeConnectState.solved) return;
+
+        const { ok, state } = applyPipeConnectRotate(
+            player.pipeConnectState,
+            tileId,
+        );
+        if (!ok) return;
+
+        player.pipeConnectState = state;
+
+        socket.emit("pipeconnect:update", {
+            tiles: toPublicPipeConnectTiles(state.tiles),
+            moves: state.moves,
+            solved: state.solved,
+        });
+
+        let rank: number | null = null;
+        if (state.solved) {
+            if (!room.finishOrder.includes(socket.id)) {
+                room.finishOrder.push(socket.id);
+            }
+            rank = room.finishOrder.indexOf(socket.id) + 1;
+            player.rank = rank;
+            socket.emit("pipeconnect:solved", {
+                rank,
+                moves: state.moves,
+                finishTime: state.finishTime,
+            });
+        }
+
+        io.to(room.hostSocketId).emit("pipeconnect:progress", {
+            playerId: socket.id,
+            tiles: toPublicPipeConnectTiles(state.tiles),
+            moves: state.moves,
+            solved: state.solved,
+            rank,
+            finishTime: state.finishTime,
+        });
+
+        const allSolved = [...room.players.values()].every(
+            (p) => p.pipeConnectState?.solved,
+        );
+        if (allSolved) endGame(room.code);
+    });
+
     // ── Host ends the round early ───────────────────────────────────
     socket.on("host:end", () => {
         const room = getRoomBySocket(socket.id);
@@ -484,6 +564,7 @@ io.on("connection", (socket) => {
             player.rushHourState = null;
             player.lightsOutState = null;
             player.codebreakerState = null;
+            player.pipeConnectState = null;
             player.rank = null;
         }
 
@@ -599,6 +680,21 @@ function endGame(roomCode: string) {
             ...entry,
             rank: entry.solved ? nextRank++ : null,
         }));
+    } else if (room.gameType === "pipeconnect") {
+        results = [...room.players.values()]
+            .map((player) => ({
+                id: player.id,
+                name: player.name,
+                rank: player.rank,
+                moves: player.pipeConnectState?.moves ?? null,
+                finishTime: player.pipeConnectState?.finishTime ?? null,
+            }))
+            .sort((a, b) => {
+                if (a.rank !== null && b.rank !== null) return a.rank - b.rank;
+                if (a.rank !== null) return -1;
+                if (b.rank !== null) return 1;
+                return 0;
+            });
     } else {
         results = [...room.players.values()]
             .map((player) => ({
