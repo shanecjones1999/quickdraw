@@ -1,6 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import type { GameType } from "../types";
-import { ALL_GAME_TYPES, formatGameLabel } from "../gameMeta";
+import {
+    ALL_GAME_TYPES,
+    formatGameLabel,
+    getGameInstructionMeta,
+} from "../gameMeta";
 import styles from "../styles/RoundShuffleOverlay.module.css";
 
 interface Props {
@@ -11,10 +15,17 @@ interface Props {
     landingBufferMs: number;
     title: string;
     subtitle: string;
+    readyCount?: number;
+    readyTarget?: number;
+    readyThresholdMet?: boolean;
+    canReady?: boolean;
+    playerReady?: boolean;
+    onReady?: () => void;
 }
 
 const REEL_SLOWDOWN_FACTOR = 1.5;
 const INITIAL_REEL_DELAY_MS = 270;
+const MYSTERY_LABELS = ["🎲 Mystery Game", "⚡ Random Draw", "❓ Hidden Pick"];
 
 function rotateGameTypes(offset: number): GameType[] {
     return [
@@ -77,22 +88,38 @@ export function RoundShuffleOverlay({
     landingBufferMs,
     title,
     subtitle,
+    readyCount = 0,
+    readyTarget = 1,
+    readyThresholdMet = false,
+    canReady = false,
+    playerReady = false,
+    onReady,
 }: Props) {
     const sequence = useMemo(() => buildShuffleSequence(gameType), [gameType]);
     const [activeIndex, setActiveIndex] = useState(0);
+    const [showInstructions, setShowInstructions] = useState(false);
+    const instructionMeta = getGameInstructionMeta(gameType);
 
-    const previousGameType =
-        sequence[Math.max(activeIndex - 1, 0)] ?? sequence[0] ?? gameType;
-    const currentGameType = sequence[activeIndex] ?? gameType;
-    const nextGameType =
-        sequence[Math.min(activeIndex + 1, sequence.length - 1)] ??
-        sequence.at(-1) ??
-        gameType;
+    const previousLabel =
+        MYSTERY_LABELS[
+            (Math.max(activeIndex - 1, 0) + MYSTERY_LABELS.length) %
+                MYSTERY_LABELS.length
+        ];
+    const currentLabel = MYSTERY_LABELS[activeIndex % MYSTERY_LABELS.length];
+    const nextLabel = MYSTERY_LABELS[(activeIndex + 1) % MYSTERY_LABELS.length];
 
     useEffect(() => {
         let cancelled = false;
         const timeoutIds: Array<ReturnType<typeof setTimeout>> = [];
         const steps = Math.max(sequence.length - 1, 1);
+
+        timeoutIds.push(
+            setTimeout(() => {
+                if (!cancelled) {
+                    setShowInstructions(true);
+                }
+            }, durationMs),
+        );
 
         function tick(nextIndex: number) {
             if (cancelled) return;
@@ -135,35 +162,115 @@ export function RoundShuffleOverlay({
         };
     }, [durationMs, landingBufferMs, sequence]);
 
+    const phaseTitle = showInstructions
+        ? `Next up: ${instructionMeta.shortLabel}`
+        : title;
+    const phaseSubtitle = showInstructions
+        ? "Quick rules check before the round begins."
+        : subtitle;
+    const waitingForReady = showInstructions && !readyThresholdMet;
+
     return (
         <div className={styles.overlay}>
             <div className={styles.card}>
                 <div className={styles.kicker}>
                     Round {roundNumber}/{totalRounds}
                 </div>
-                <div className={styles.title}>{title}</div>
-                <div className={styles.subtitle}>{subtitle}</div>
-                <div className={styles.reelFrame}>
-                    <div
-                        key={`${gameType}-${activeIndex}`}
-                        className={styles.reelWindow}
-                    >
-                        <div className={styles.reelItem}>
-                            {formatGameLabel(previousGameType)}
+                <div className={styles.title}>{phaseTitle}</div>
+                <div className={styles.subtitle}>{phaseSubtitle}</div>
+                {!showInstructions ? (
+                    <>
+                        <div className={styles.reelFrame}>
+                            <div
+                                key={`${gameType}-${activeIndex}`}
+                                className={styles.reelWindow}
+                            >
+                                <div className={styles.reelItem}>
+                                    {previousLabel}
+                                </div>
+                                <div
+                                    className={`${styles.reelItem} ${styles.reelItemActive}`}
+                                >
+                                    {currentLabel}
+                                </div>
+                                <div className={styles.reelItem}>
+                                    {nextLabel}
+                                </div>
+                            </div>
                         </div>
-                        <div
-                            className={`${styles.reelItem} ${styles.reelItemActive}`}
-                        >
-                            {formatGameLabel(currentGameType)}
+                        <div className={styles.finalLabel}>
+                            Drawing this round’s mini-game…
                         </div>
-                        <div className={styles.reelItem}>
-                            {formatGameLabel(nextGameType)}
+                    </>
+                ) : (
+                    <div className={styles.revealBadge}>
+                        {formatGameLabel(gameType)}
+                    </div>
+                )}
+                <div
+                    className={`${styles.instructionsCard} ${showInstructions ? styles.instructionsCardVisible : styles.instructionsCardHidden}`}
+                >
+                    <div className={styles.instructionsHeader}>
+                        <div className={styles.instructionsTitle}>
+                            {instructionMeta.shortLabel}
+                        </div>
+                        <div className={styles.instructionsCategory}>
+                            {instructionMeta.category}
                         </div>
                     </div>
-                </div>
-                <div className={styles.finalLabel}>
-                    Landing on <span>{formatGameLabel(gameType)}</span>
-                    {landingBufferMs > 0 ? "…" : ""}
+                    <div className={styles.instructionsGrid}>
+                        <div className={styles.instructionsItem}>
+                            <span className={styles.instructionsLabel}>
+                                Objective
+                            </span>
+                            <span className={styles.instructionsText}>
+                                {instructionMeta.objective}
+                            </span>
+                        </div>
+                        <div className={styles.instructionsItem}>
+                            <span className={styles.instructionsLabel}>
+                                Controls
+                            </span>
+                            <span className={styles.instructionsText}>
+                                {instructionMeta.controls}
+                            </span>
+                        </div>
+                        <div
+                            className={`${styles.instructionsItem} ${styles.instructionsItemWide}`}
+                        >
+                            <span className={styles.instructionsLabel}>
+                                Win Condition
+                            </span>
+                            <span className={styles.instructionsText}>
+                                {instructionMeta.winCondition}
+                            </span>
+                        </div>
+                    </div>
+                    {showInstructions && (
+                        <div className={styles.instructionsFooterBlock}>
+                            <div className={styles.instructionsFooter}>
+                                {readyThresholdMet
+                                    ? "Ready received — starting the round…"
+                                    : `${readyCount}/${readyTarget} ready to begin`}
+                            </div>
+                            {waitingForReady && canReady && onReady ? (
+                                <button
+                                    type="button"
+                                    className={styles.readyButton}
+                                    onClick={onReady}
+                                    disabled={playerReady}
+                                >
+                                    {playerReady ? "Ready Locked In" : "Ready"}
+                                </button>
+                            ) : null}
+                            {waitingForReady && !canReady ? (
+                                <div className={styles.instructionsSubtle}>
+                                    Waiting for at least one player to tap
+                                    Ready…
+                                </div>
+                            ) : null}
+                        </div>
+                    )}
                 </div>
             </div>
         </div>

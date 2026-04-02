@@ -38,6 +38,13 @@ export interface RoundShufflePayload {
     landingBufferMs: number;
 }
 
+export interface RoundReadyStatusPayload {
+    readyCount: number;
+    readyTarget: number;
+    readyThresholdMet: boolean;
+    playerReady: boolean;
+}
+
 export interface ProgressSnapshot {
     playerId: string;
     board: (string | null)[][];

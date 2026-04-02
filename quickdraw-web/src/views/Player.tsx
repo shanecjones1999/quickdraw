@@ -26,6 +26,7 @@ import type {
     Piece,
     PipeConnectResult,
     PipeConnectTile,
+    RoundReadyStatusPayload,
     RushHourResult,
     SimonCopyConfig,
     SimonCopyResult,
@@ -102,6 +103,13 @@ interface ShuffleState {
     landingBufferMs: number;
 }
 
+interface ShuffleReadyState {
+    readyCount: number;
+    readyTarget: number;
+    readyThresholdMet: boolean;
+    playerReady: boolean;
+}
+
 export function Player({
     roomCode,
     playerName,
@@ -140,6 +148,8 @@ export function Player({
     const [results, setResults] = useState<RoundResult[]>([]);
     const [startTime, setStartTime] = useState<number | null>(null);
     const [shuffleState, setShuffleState] = useState<ShuffleState | null>(null);
+    const [shuffleReadyState, setShuffleReadyState] =
+        useState<ShuffleReadyState | null>(null);
     const elapsed = useTimer(startTime);
     const cellSize = useCellSize();
     const { notice, dismissNotice, retryConnection } = useConnectionNotice({
@@ -247,6 +257,7 @@ export function Player({
             setStandings([]);
             setResults([]);
             setViewKey(`${roundNumber}-${gt}`);
+            setShuffleReadyState(null);
             if (gt === "klotski") {
                 setPieces(p ?? null);
                 setMoves(0);
@@ -315,6 +326,29 @@ export function Player({
                 totalRounds: nextTotalRounds,
                 durationMs,
                 landingBufferMs,
+            });
+            setShuffleReadyState({
+                readyCount: 0,
+                readyTarget: 1,
+                readyThresholdMet: false,
+                playerReady: false,
+            });
+        },
+        [],
+    );
+
+    const onRoundReadyStatus = useCallback(
+        ({
+            readyCount,
+            readyTarget,
+            readyThresholdMet,
+            playerReady,
+        }: RoundReadyStatusPayload) => {
+            setShuffleReadyState({
+                readyCount,
+                readyTarget,
+                readyThresholdMet,
+                playerReady,
             });
         },
         [],
@@ -400,12 +434,14 @@ export function Player({
         setSelectedPiece(null);
         setStartTime(null);
         setResults([]);
+        setShuffleReadyState(null);
     }, []);
 
     useSocket("room:updated", onRoomUpdated as never);
     useSocket("room:settings", onRoomSettings as never);
     useSocket("room:gameType", onRoomGameType as never);
     useSocket("round:shuffle", onRoundShuffle as never);
+    useSocket("round:readyStatus", onRoundReadyStatus as never);
     useSocket("game:started", onGameStarted as never);
     useSocket("state:update", onStateUpdate as never);
     useSocket("puzzle:solved", onPuzzleSolved as never);
@@ -694,6 +730,7 @@ export function Player({
 
                 {phase === "shuffling" && shuffleState && (
                     <RoundShuffleOverlay
+                        key={`${shuffleState.roundNumber}-${shuffleState.gameType}`}
                         gameType={shuffleState.gameType}
                         roundNumber={shuffleState.roundNumber}
                         totalRounds={shuffleState.totalRounds}
@@ -701,6 +738,14 @@ export function Player({
                         landingBufferMs={shuffleState.landingBufferMs}
                         title="Drawing the next mini game"
                         subtitle={`Get ready — ${formatGameLabel(shuffleState.gameType)} is about to begin.`}
+                        readyCount={shuffleReadyState?.readyCount ?? 0}
+                        readyTarget={shuffleReadyState?.readyTarget ?? 1}
+                        readyThresholdMet={
+                            shuffleReadyState?.readyThresholdMet ?? false
+                        }
+                        canReady
+                        playerReady={shuffleReadyState?.playerReady ?? false}
+                        onReady={() => socket.emit("player:ready")}
                     />
                 )}
 

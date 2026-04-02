@@ -64,6 +64,8 @@ export interface Room {
     roundSequence: GameType[];
     gameStartTime: number | null;
     finishOrder: string[];
+    roundReadyPlayerSessionIds: Set<string>;
+    roundReadyOpensAt: number | null;
     roundRevealTimeout: ReturnType<typeof setTimeout> | null;
 }
 

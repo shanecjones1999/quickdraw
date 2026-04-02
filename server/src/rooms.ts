@@ -29,6 +29,8 @@ export function createRoom(hostSocketId: string): Room {
         roundSequence: [],
         gameStartTime: null,
         finishOrder: [],
+        roundReadyPlayerSessionIds: new Set(),
+        roundReadyOpensAt: null,
         roundRevealTimeout: null,
     };
     rooms.set(code, room);

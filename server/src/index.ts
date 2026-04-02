@@ -54,6 +54,7 @@ const MIN_MATCH_ROUNDS = 1;
 const MAX_MATCH_ROUNDS = 12;
 const ROUND_SHUFFLE_DURATION_MS = 4800;
 const ROUND_SHUFFLE_LANDING_BUFFER_MS = 850;
+const ROUND_READY_TARGET = 1;
 const PLAYER_RECONNECT_GRACE_MS = 30000;
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -159,6 +160,27 @@ function emitRoomUpdated(room: Room) {
     io.to(room.code).emit("room:updated", {
         players: serializePlayers(room),
     });
+}
+
+function emitRoundReadyStatus(room: Room) {
+    const readyCount = room.roundReadyPlayerSessionIds.size;
+    const readyThresholdMet = readyCount >= ROUND_READY_TARGET;
+
+    io.to(room.hostSocketId).emit("round:readyStatus", {
+        readyCount,
+        readyTarget: ROUND_READY_TARGET,
+        readyThresholdMet,
+        playerReady: false,
+    });
+
+    for (const player of room.players.values()) {
+        io.to(player.id).emit("round:readyStatus", {
+            readyCount,
+            readyTarget: ROUND_READY_TARGET,
+            readyThresholdMet,
+            playerReady: room.roundReadyPlayerSessionIds.has(player.sessionId),
+        });
+    }
 }
 
 function getPlayerBySocket(room: Room, socketId: string) {
@@ -402,9 +424,13 @@ function emitPlayerResumeState(
             gameType: room.roundSequence[room.currentRound] ?? room.gameType,
             roundNumber: room.currentRound + 1,
             totalRounds: room.totalRounds,
-            durationMs: ROUND_SHUFFLE_DURATION_MS,
+            durationMs: Math.max(
+                0,
+                (room.roundReadyOpensAt ?? Date.now()) - Date.now(),
+            ),
             landingBufferMs: ROUND_SHUFFLE_LANDING_BUFFER_MS,
         });
+        emitRoundReadyStatus(room);
         return;
     }
 
@@ -636,6 +662,8 @@ function emitPlayerResumeState(
 function clearRoundState(room: Room) {
     room.gameStartTime = null;
     room.finishOrder = [];
+    room.roundReadyPlayerSessionIds.clear();
+    room.roundReadyOpensAt = null;
     for (const player of room.players.values()) {
         player.puzzleState = null;
         player.bowmanState = null;
@@ -814,6 +842,8 @@ function queueRoundStart(room: Room) {
     const nextRoundNumber = room.currentRound + 1;
 
     room.phase = "shuffling";
+    room.roundReadyPlayerSessionIds.clear();
+    room.roundReadyOpensAt = Date.now() + ROUND_SHUFFLE_DURATION_MS;
     io.to(room.code).emit("round:shuffle", {
         gameType: nextGameType,
         roundNumber: nextRoundNumber,
@@ -821,15 +851,7 @@ function queueRoundStart(room: Room) {
         durationMs: ROUND_SHUFFLE_DURATION_MS,
         landingBufferMs: ROUND_SHUFFLE_LANDING_BUFFER_MS,
     });
-
-    room.roundRevealTimeout = setTimeout(() => {
-        room.roundRevealTimeout = null;
-
-        if (getRoom(room.code) !== room) return;
-        if (room.phase !== "shuffling") return;
-
-        startRound(room, nextGameType);
-    }, ROUND_SHUFFLE_DURATION_MS + ROUND_SHUFFLE_LANDING_BUFFER_MS);
+    emitRoundReadyStatus(room);
 }
 
 // Serve the React build in production
@@ -958,6 +980,34 @@ io.on("connection", (socket) => {
             );
         },
     );
+
+    socket.on("player:ready", () => {
+        const room = getRoomBySocket(socket.id);
+        if (!room || room.phase !== "shuffling") return;
+
+        const player = getPlayerBySocket(room, socket.id);
+        if (!player) return;
+        if (room.roundReadyOpensAt && Date.now() < room.roundReadyOpensAt) {
+            return;
+        }
+
+        room.roundReadyPlayerSessionIds.add(player.sessionId);
+        emitRoundReadyStatus(room);
+
+        if (
+            room.roundReadyPlayerSessionIds.size >= ROUND_READY_TARGET &&
+            !room.roundRevealTimeout
+        ) {
+            room.roundRevealTimeout = setTimeout(() => {
+                room.roundRevealTimeout = null;
+
+                if (getRoom(room.code) !== room) return;
+                if (room.phase !== "shuffling") return;
+
+                startRound(room);
+            }, ROUND_SHUFFLE_LANDING_BUFFER_MS);
+        }
+    });
 
     // ── Host starts the game ────────────────────────────────────────
     socket.on("host:start", () => {

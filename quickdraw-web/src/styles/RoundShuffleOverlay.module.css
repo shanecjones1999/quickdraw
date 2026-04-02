@@ -7,7 +7,7 @@
 }
 
 .card {
-  width: min(100%, 34rem);
+  width: min(100%, 42rem);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -118,4 +118,158 @@
 .finalLabel span {
   color: #ffd700;
   font-weight: 700;
+}
+
+.revealBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.65rem 1rem;
+  border-radius: 999px;
+  background: rgba(255,215,0,0.12);
+  border: 1px solid rgba(255,215,0,0.28);
+  color: #ffd700;
+  font-family: 'Russo One', sans-serif;
+  font-size: 1rem;
+}
+
+.instructionsCard {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  margin-top: 0.5rem;
+  padding: 1rem;
+  border-radius: 1rem;
+  background: rgba(10, 13, 40, 0.72);
+  border: 1px solid rgba(255,255,255,0.1);
+}
+
+.instructionsCardHidden {
+  opacity: 0;
+  max-height: 0;
+  margin-top: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  border-width: 0;
+  overflow: hidden;
+}
+
+.instructionsCardVisible {
+  opacity: 1;
+  max-height: 30rem;
+  transition: opacity 180ms ease, max-height 220ms ease;
+}
+
+.instructionsHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.instructionsTitle {
+  color: #fff;
+  font-family: 'Russo One', sans-serif;
+  font-size: 1rem;
+}
+
+.instructionsCategory {
+  padding: 0.3rem 0.65rem;
+  border-radius: 999px;
+  background: rgba(255,215,0,0.12);
+  border: 1px solid rgba(255,215,0,0.24);
+  color: #ffd700;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.instructionsGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.instructionsItem {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 0.8rem 0.9rem;
+  border-radius: 0.85rem;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.08);
+}
+
+.instructionsItemWide {
+  grid-column: 1 / -1;
+}
+
+.instructionsLabel {
+  color: rgba(255,255,255,0.5);
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.instructionsText {
+  color: rgba(255,255,255,0.88);
+  font-size: 0.92rem;
+  line-height: 1.45;
+}
+
+.instructionsFooter {
+  color: rgba(255,255,255,0.62);
+  font-size: 0.88rem;
+  text-align: center;
+}
+
+.instructionsFooterBlock {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.readyButton {
+  min-width: 10rem;
+  padding: 0.75rem 1rem;
+  border-radius: 999px;
+  background: #ffd700;
+  color: #0d0d2b;
+  font-family: 'Russo One', sans-serif;
+  font-size: 0.95rem;
+  transition: transform 0.1s ease, opacity 0.15s ease;
+}
+
+.readyButton:active {
+  transform: scale(0.97);
+}
+
+.readyButton:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.instructionsSubtle {
+  color: rgba(255,255,255,0.52);
+  font-size: 0.84rem;
+  text-align: center;
+}
+
+@media (max-width: 640px) {
+  .card {
+    padding: 1.4rem 1rem;
+  }
+
+  .instructionsGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .instructionsItemWide {
+    grid-column: auto;
+  }
 }
