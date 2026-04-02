@@ -1,5 +1,6 @@
 import express from "express";
-import { createServer } from "http";
+import { createServer as createHttpServer } from "http";
+import { createServer as createHttpsServer } from "https";
 import { Server } from "socket.io";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
@@ -37,9 +38,44 @@ import {
 import type { GameType } from "./types.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+const useLocalHttps = process.env.LOCAL_HTTPS === "true";
+
+async function createAppServer(app: express.Express) {
+    if (!useLocalHttps) {
+        return createHttpServer(app);
+    }
+
+    const { default: selfsigned } = await import("selfsigned");
+    const certificate = selfsigned.generate(
+        [{ name: "commonName", value: "localhost" }],
+        {
+            algorithm: "sha256",
+            days: 365,
+            keySize: 2048,
+            extensions: [
+                {
+                    name: "subjectAltName",
+                    altNames: [
+                        { type: 2, value: "localhost" },
+                        { type: 7, ip: "127.0.0.1" },
+                        { type: 7, ip: "::1" },
+                    ],
+                },
+            ],
+        },
+    );
+
+    return createHttpsServer(
+        {
+            key: certificate.private,
+            cert: certificate.cert,
+        },
+        app,
+    );
+}
 
 const app = express();
-const httpServer = createServer(app);
+const httpServer = await createAppServer(app);
 const io = new Server(httpServer, {
     cors: { origin: "*" },
 });
@@ -941,5 +977,6 @@ function endGame(roomCode: string) {
 
 const PORT = process.env.PORT ?? 3001;
 httpServer.listen(PORT, () => {
-    console.log(`Server running on http://localhost:${PORT}`);
+    const protocol = useLocalHttps ? "https" : "http";
+    console.log(`Server running on ${protocol}://localhost:${PORT}`);
 });

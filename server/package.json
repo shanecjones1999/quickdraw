@@ -3,12 +3,13 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "tsx watch src/index.ts",
+    "dev": "LOCAL_HTTPS=true tsx watch src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js"
   },
   "dependencies": {
     "express": "^4.19.2",
+    "selfsigned": "^3.0.1",
     "socket.io": "^4.8.1"
   },
   "devDependencies": {
