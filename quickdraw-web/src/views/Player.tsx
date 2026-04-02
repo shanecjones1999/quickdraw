@@ -110,6 +110,16 @@ interface ShuffleReadyState {
     playerReady: boolean;
 }
 
+function getTopName<T extends { name: string; rank: number | null }>(
+    entries: T[],
+): string | null {
+    return (
+        entries.find((entry) => entry.rank === 1)?.name ??
+        entries.find((entry) => entry.rank !== null)?.name ??
+        null
+    );
+}
+
 export function Player({
     roomCode,
     playerName,
@@ -158,6 +168,9 @@ export function Player({
         playerName,
         playerSessionId,
     });
+    const recentWinnerName = getTopName(results);
+    const leaderName =
+        standings.find((standing) => standing.position === 1)?.name ?? null;
 
     useEffect(() => {
         if (!resumeSession) return;
@@ -745,6 +758,8 @@ export function Player({
                         }
                         canReady
                         playerReady={shuffleReadyState?.playerReady ?? false}
+                        recentWinnerName={recentWinnerName}
+                        leaderName={leaderName}
                         onReady={() => socket.emit("player:ready")}
                     />
                 )}

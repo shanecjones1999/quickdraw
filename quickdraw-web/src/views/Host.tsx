@@ -66,6 +66,16 @@ interface ShuffleReadyState {
     readyThresholdMet: boolean;
 }
 
+function getTopName<T extends { name: string; rank: number | null }>(
+    entries: T[],
+): string | null {
+    return (
+        entries.find((entry) => entry.rank === 1)?.name ??
+        entries.find((entry) => entry.rank !== null)?.name ??
+        null
+    );
+}
+
 export function Host({ roomCode }: Props) {
     const [phase, setPhase] = useState<Phase>("lobby");
     const [players, setPlayers] = useState<PlayerInfo[]>([]);
@@ -129,6 +139,24 @@ export function Host({ roomCode }: Props) {
     const playerCount = players.length;
     const canStart = playerCount >= MIN_PLAYERS_TO_START;
     const playersNeeded = Math.max(MIN_PLAYERS_TO_START - playerCount, 0);
+    const recentWinnerName =
+        gameType === "bowman"
+            ? getTopName(bowmanResults)
+            : gameType === "codebreaker"
+              ? getTopName(codebreakerResults)
+              : gameType === "lightsout"
+                ? getTopName(lightsOutResults)
+                : gameType === "pipeconnect"
+                  ? getTopName(pipeConnectResults)
+                  : gameType === "simoncopy"
+                    ? getTopName(simonCopyResults)
+                    : gameType === "memorysequenceplus"
+                      ? getTopName(memorySequencePlusResults)
+                      : gameType === "rushhour"
+                        ? getTopName(rushHourResults)
+                        : getTopName(results);
+    const leaderName =
+        standings.find((standing) => standing.position === 1)?.name ?? null;
 
     const onRoomUpdated = useCallback(
         ({ players: p }: { players: PlayerInfo[] }) => {
@@ -631,6 +659,8 @@ export function Host({ roomCode }: Props) {
                         readyThresholdMet={
                             shuffleReadyState?.readyThresholdMet ?? false
                         }
+                        recentWinnerName={recentWinnerName}
+                        leaderName={leaderName}
                     />
                 )}
 

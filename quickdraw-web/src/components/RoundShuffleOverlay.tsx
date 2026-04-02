@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { GameType } from "../types";
 import {
     ALL_GAME_TYPES,
@@ -20,6 +20,8 @@ interface Props {
     readyThresholdMet?: boolean;
     canReady?: boolean;
     playerReady?: boolean;
+    recentWinnerName?: string | null;
+    leaderName?: string | null;
     onReady?: () => void;
 }
 
@@ -93,12 +95,50 @@ export function RoundShuffleOverlay({
     readyThresholdMet = false,
     canReady = false,
     playerReady = false,
+    recentWinnerName = null,
+    leaderName = null,
     onReady,
 }: Props) {
     const sequence = useMemo(() => buildShuffleSequence(gameType), [gameType]);
     const [activeIndex, setActiveIndex] = useState(0);
     const [showInstructions, setShowInstructions] = useState(false);
+    const [countdownNow, setCountdownNow] = useState(() => Date.now());
+    const phaseStartedAtRef = useRef(Date.now());
+    const readyThresholdReachedAtRef = useRef<number | null>(null);
     const instructionMeta = getGameInstructionMeta(gameType);
+
+    const revealMsRemaining = Math.max(
+        0,
+        durationMs - (countdownNow - phaseStartedAtRef.current),
+    );
+    const revealCountdown = Math.max(
+        1,
+        Math.min(3, Math.ceil(revealMsRemaining / 1000)),
+    );
+    const landingMsRemaining = readyThresholdReachedAtRef.current
+        ? Math.max(
+              0,
+              landingBufferMs -
+                  (countdownNow - readyThresholdReachedAtRef.current),
+          )
+        : landingBufferMs;
+    const landingCountdown = Math.max(0, Math.ceil(landingMsRemaining / 1000));
+    const countdownLabel = !showInstructions
+        ? "Locks in"
+        : readyThresholdMet
+          ? landingCountdown > 0
+              ? "Starting in"
+              : "Starting now"
+          : canReady
+            ? "Tap ready"
+            : "Stand by";
+    const countdownValue = !showInstructions
+        ? String(revealCountdown)
+        : readyThresholdMet
+          ? String(Math.max(landingCountdown, 0))
+          : "•";
+    const leaderBadgeLabel =
+        leaderName && leaderName !== recentWinnerName ? leaderName : null;
 
     const previousLabel =
         MYSTERY_LABELS[
@@ -107,6 +147,25 @@ export function RoundShuffleOverlay({
         ];
     const currentLabel = MYSTERY_LABELS[activeIndex % MYSTERY_LABELS.length];
     const nextLabel = MYSTERY_LABELS[(activeIndex + 1) % MYSTERY_LABELS.length];
+
+    useEffect(() => {
+        const intervalId = setInterval(() => {
+            setCountdownNow(Date.now());
+        }, 100);
+
+        return () => {
+            clearInterval(intervalId);
+        };
+    }, []);
+
+    useEffect(() => {
+        if (readyThresholdMet) {
+            readyThresholdReachedAtRef.current ??= Date.now();
+            return;
+        }
+
+        readyThresholdReachedAtRef.current = null;
+    }, [readyThresholdMet]);
 
     useEffect(() => {
         let cancelled = false;
@@ -172,12 +231,41 @@ export function RoundShuffleOverlay({
 
     return (
         <div className={styles.overlay}>
-            <div className={styles.card}>
+            <div
+                className={`${styles.card} ${showInstructions ? styles.cardReveal : styles.cardShuffle}`}
+            >
                 <div className={styles.kicker}>
                     Round {roundNumber}/{totalRounds}
                 </div>
+                {recentWinnerName || leaderBadgeLabel ? (
+                    <div className={styles.metaRow}>
+                        {recentWinnerName ? (
+                            <div className={styles.metaBadge}>
+                                Last win: {recentWinnerName}
+                            </div>
+                        ) : null}
+                        {leaderBadgeLabel ? (
+                            <div className={styles.metaBadge}>
+                                Leader: {leaderBadgeLabel}
+                            </div>
+                        ) : null}
+                    </div>
+                ) : null}
                 <div className={styles.title}>{phaseTitle}</div>
                 <div className={styles.subtitle}>{phaseSubtitle}</div>
+                <div
+                    className={`${styles.countdownBadge} ${showInstructions ? styles.countdownBadgeLocked : ""} ${!showInstructions || readyThresholdMet ? styles.countdownBadgePulse : ""}`}
+                >
+                    <span className={styles.countdownLabel}>
+                        {countdownLabel}
+                    </span>
+                    <span
+                        key={`${showInstructions ? "reveal" : "shuffle"}-${countdownValue}`}
+                        className={styles.countdownValue}
+                    >
+                        {countdownValue}
+                    </span>
+                </div>
                 {!showInstructions ? (
                     <>
                         <div className={styles.reelFrame}>
@@ -199,12 +287,17 @@ export function RoundShuffleOverlay({
                             </div>
                         </div>
                         <div className={styles.finalLabel}>
-                            Drawing this round’s mini-game…
+                            Shuffling every challenge and narrowing it down…
                         </div>
                     </>
                 ) : (
-                    <div className={styles.revealBadge}>
-                        {formatGameLabel(gameType)}
+                    <div className={styles.revealBlock}>
+                        <div className={styles.revealBadge}>
+                            {formatGameLabel(gameType)}
+                        </div>
+                        <div className={styles.revealCaption}>
+                            Locked in for Round {roundNumber}
+                        </div>
                     </div>
                 )}
                 <div
