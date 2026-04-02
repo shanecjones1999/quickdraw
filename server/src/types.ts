@@ -36,7 +36,10 @@ export interface PuzzleState {
 
 export interface Player {
     id: string; // socketId
+    sessionId: string;
     name: string;
+    connected: boolean;
+    disconnectTimeout: ReturnType<typeof setTimeout> | null;
     puzzleState: PuzzleState | null;
     bowmanState: BowmanState | null;
     rushHourState: RushHourState | null;

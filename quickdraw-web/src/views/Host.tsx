@@ -1,4 +1,6 @@
 import { useState, useCallback } from "react";
+import { ConnectionNotice } from "../components/ConnectionNotice";
+import { useConnectionNotice } from "../hooks/useConnectionNotice";
 import { socket } from "../socket";
 import { useSocket } from "../hooks/useSocket";
 import { useTimer, formatTime } from "../hooks/useTimer";
@@ -112,6 +114,9 @@ export function Host({ roomCode }: Props) {
     const [gameStartTime, setGameStartTime] = useState<number | null>(null);
     const [shuffleState, setShuffleState] = useState<ShuffleState | null>(null);
     const now = useTimer(gameStartTime);
+    const { notice, dismissNotice, retryConnection } = useConnectionNotice({
+        role: "host",
+    });
     const playerCount = players.length;
     const canStart = playerCount >= MIN_PLAYERS_TO_START;
     const playersNeeded = Math.max(MIN_PLAYERS_TO_START - playerCount, 0);
@@ -364,6 +369,16 @@ export function Host({ roomCode }: Props) {
             </header>
 
             <div className={styles.content}>
+                {notice && (
+                    <ConnectionNotice
+                        tone={notice.tone}
+                        title={notice.title}
+                        message={notice.message}
+                        actionLabel="Refresh"
+                        onAction={retryConnection}
+                        onDismiss={dismissNotice}
+                    />
+                )}
                 {/* ── Lobby ───────────────────────────────────────── */}
                 {phase === "lobby" && (
                     <div className={styles.lobby}>

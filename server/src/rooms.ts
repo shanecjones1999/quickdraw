@@ -42,7 +42,9 @@ export function getRoom(code: string): Room | undefined {
 export function getRoomBySocket(socketId: string): Room | undefined {
     for (const room of rooms.values()) {
         if (room.hostSocketId === socketId) return room;
-        if (room.players.has(socketId)) return room;
+        for (const player of room.players.values()) {
+            if (player.id === socketId) return room;
+        }
     }
     return undefined;
 }

@@ -1,57 +1,159 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { ConnectionNotice } from "../components/ConnectionNotice";
+import {
+    getConnectErrorNotice,
+    getServerErrorNotice,
+    type ConnectionNoticeData,
+} from "../connectionMessages";
 import { socket } from "../socket";
+import {
+    clearLandingDraft,
+    getOrCreatePlayerSessionId,
+    loadLandingDraft,
+    saveLandingDraft,
+} from "../sessionState";
 import styles from "../styles/Landing.module.css";
 
 type Screen = "home" | "join";
 
 interface Props {
     onHostCreated: (roomCode: string) => void;
-    onPlayerJoined: (roomCode: string, playerName: string) => void;
+    onPlayerJoined: (
+        roomCode: string,
+        playerName: string,
+        playerSessionId: string,
+    ) => void;
 }
 
 export function Landing({ onHostCreated, onPlayerJoined }: Props) {
-    const [screen, setScreen] = useState<Screen>("home");
-    const [roomCode, setRoomCode] = useState("");
-    const [playerName, setPlayerName] = useState("");
+    const initialDraft = loadLandingDraft();
+    const [screen, setScreen] = useState<Screen>(
+        initialDraft?.screen ?? "home",
+    );
+    const [roomCode, setRoomCode] = useState(initialDraft?.roomCode ?? "");
+    const [playerName, setPlayerName] = useState(
+        initialDraft?.playerName ?? "",
+    );
     const [error, setError] = useState("");
+    const [notice, setNotice] = useState<ConnectionNoticeData | null>(null);
     const [loading, setLoading] = useState(false);
 
-    function handleHost() {
+    useEffect(() => {
+        saveLandingDraft({
+            screen,
+            roomCode,
+            playerName,
+        });
+    }, [playerName, roomCode, screen]);
+
+    function clearUiMessages() {
+        setError("");
+        setNotice(null);
+    }
+
+    function submitJoin() {
+        if (!roomCode.trim() || !playerName.trim()) {
+            setError("Enter both a room code and your name.");
+            return;
+        }
+
+        clearUiMessages();
         setLoading(true);
-        socket.connect();
-        socket.once("room:created", ({ roomCode }: { roomCode: string }) => {
+        const normalizedRoomCode = roomCode.toUpperCase().trim();
+        const normalizedPlayerName = playerName.trim();
+        const playerSessionId = getOrCreatePlayerSessionId();
+
+        const handleConnectError = () => {
+            cleanup();
             setLoading(false);
+            setNotice(getConnectErrorNotice("landing"));
+        };
+
+        const handleServerError = ({ message }: { message?: string }) => {
+            cleanup();
+            setLoading(false);
+            setNotice(
+                getServerErrorNotice(
+                    message ?? "Connection problem",
+                    "landing",
+                ),
+            );
+        };
+
+        const handleJoined = () => {
+            cleanup();
+            setLoading(false);
+            clearLandingDraft();
+            onPlayerJoined(
+                normalizedRoomCode,
+                normalizedPlayerName,
+                playerSessionId,
+            );
+        };
+
+        const cleanup = () => {
+            socket.off("connect_error", handleConnectError);
+            socket.off("error", handleServerError);
+            socket.off("room:updated", handleJoined);
+        };
+
+        socket.once("connect_error", handleConnectError);
+        socket.once("error", handleServerError);
+        socket.once("room:updated", handleJoined);
+
+        if (!socket.connected) socket.connect();
+
+        socket.emit("player:join", {
+            roomCode: normalizedRoomCode,
+            playerName: normalizedPlayerName,
+            playerSessionId,
+        });
+    }
+
+    function handleHost() {
+        clearUiMessages();
+        setLoading(true);
+        const handleConnectError = () => {
+            cleanup();
+            setLoading(false);
+            setNotice(getConnectErrorNotice("landing"));
+        };
+
+        const handleServerError = ({ message }: { message?: string }) => {
+            cleanup();
+            setLoading(false);
+            setNotice(
+                getServerErrorNotice(
+                    message ?? "Connection problem",
+                    "landing",
+                ),
+            );
+        };
+
+        const handleCreated = ({ roomCode }: { roomCode: string }) => {
+            cleanup();
+            setLoading(false);
+            clearLandingDraft();
             onHostCreated(roomCode);
-        });
-        socket.once("error", ({ message }: { message: string }) => {
-            setLoading(false);
-            setError(message);
-        });
+        };
+
+        const cleanup = () => {
+            socket.off("connect_error", handleConnectError);
+            socket.off("error", handleServerError);
+            socket.off("room:created", handleCreated);
+        };
+
+        socket.once("connect_error", handleConnectError);
+        socket.once("error", handleServerError);
+        socket.once("room:created", handleCreated);
+
+        socket.connect();
         socket.emit("host:create");
     }
 
     function handleJoinSubmit(e: React.FormEvent) {
         e.preventDefault();
-        if (!roomCode.trim() || !playerName.trim()) {
-            setError("Enter both a room code and your name.");
-            return;
-        }
-        setError("");
-        setLoading(true);
-        if (!socket.connected) socket.connect();
-
-        socket.once("room:updated", () => {
-            setLoading(false);
-            onPlayerJoined(roomCode.toUpperCase().trim(), playerName.trim());
-        });
-        socket.once("error", ({ message }: { message: string }) => {
-            setLoading(false);
-            setError(message);
-        });
-        socket.emit("player:join", {
-            roomCode: roomCode.toUpperCase().trim(),
-            playerName: playerName.trim(),
-        });
+        submitJoin();
     }
 
     if (screen === "join") {
@@ -79,6 +181,19 @@ export function Landing({ onHostCreated, onPlayerJoined }: Props) {
                         value={playerName}
                         onChange={(e) => setPlayerName(e.target.value)}
                     />
+                    {notice && (
+                        <ConnectionNotice
+                            tone={notice.tone}
+                            title={notice.title}
+                            message={notice.message}
+                            actionLabel="Try again"
+                            onAction={() => {
+                                setNotice(null);
+                                submitJoin();
+                            }}
+                            onDismiss={() => setNotice(null)}
+                        />
+                    )}
                     {error && <div className={styles.error}>{error}</div>}
                     <button
                         className={styles.btnPrimary}
@@ -92,7 +207,7 @@ export function Landing({ onHostCreated, onPlayerJoined }: Props) {
                         className={styles.back}
                         onClick={() => {
                             setScreen("home");
-                            setError("");
+                            clearUiMessages();
                         }}
                     >
                         ← Back
@@ -108,6 +223,19 @@ export function Landing({ onHostCreated, onPlayerJoined }: Props) {
                 <span className={styles.lightning}>⚡</span> QUICK DRAW
             </div>
             <div className={styles.subtitle}>Multiplayer party games</div>
+            {notice && (
+                <ConnectionNotice
+                    tone={notice.tone}
+                    title={notice.title}
+                    message={notice.message}
+                    actionLabel="Try again"
+                    onAction={() => {
+                        setNotice(null);
+                        handleHost();
+                    }}
+                    onDismiss={() => setNotice(null)}
+                />
+            )}
             <div className={styles.explainer}>
                 <div className={styles.explainerTitle}>How it works</div>
                 <div className={styles.explainerSteps}>
@@ -160,7 +288,7 @@ export function Landing({ onHostCreated, onPlayerJoined }: Props) {
                     className={styles.btnSecondary}
                     onClick={() => {
                         setScreen("join");
-                        setError("");
+                        clearUiMessages();
                     }}
                 >
                     📱 Join a Game

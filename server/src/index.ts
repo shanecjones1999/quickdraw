@@ -36,7 +36,7 @@ import {
     submitSimonCopyRound,
 } from "./simoncopy.js";
 import type { GameType } from "./types.js";
-import type { MatchStanding, Room } from "./types.js";
+import type { MatchStanding, Player, Room } from "./types.js";
 
 const AVAILABLE_GAME_TYPES: GameType[] = [
     "klotski",
@@ -54,6 +54,7 @@ const MIN_MATCH_ROUNDS = 1;
 const MAX_MATCH_ROUNDS = 12;
 const ROUND_SHUFFLE_DURATION_MS = 4800;
 const ROUND_SHUFFLE_LANDING_BUFFER_MS = 850;
+const PLAYER_RECONNECT_GRACE_MS = 30000;
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const useLocalHttps = process.env.LOCAL_HTTPS === "true";
@@ -144,6 +145,492 @@ function emitRoomSettings(room: Room) {
         totalRounds: room.totalRounds,
         currentRound: room.currentRound,
     });
+}
+
+function serializePlayers(room: Room) {
+    return [...room.players.values()].map(({ id, name, rank }) => ({
+        id,
+        name,
+        rank,
+    }));
+}
+
+function emitRoomUpdated(room: Room) {
+    io.to(room.code).emit("room:updated", {
+        players: serializePlayers(room),
+    });
+}
+
+function getPlayerBySocket(room: Room, socketId: string) {
+    for (const player of room.players.values()) {
+        if (player.id === socketId) return player;
+    }
+
+    return undefined;
+}
+
+function getPlayerById(room: Room, id: string) {
+    for (const player of room.players.values()) {
+        if (player.id === id) return player;
+    }
+
+    return undefined;
+}
+
+function updatePlayerSocket(room: Room, player: Player, socketId: string) {
+    const previousSocketId = player.id;
+    player.id = socketId;
+    player.connected = true;
+
+    if (player.disconnectTimeout) {
+        clearTimeout(player.disconnectTimeout);
+        player.disconnectTimeout = null;
+    }
+
+    if (previousSocketId !== socketId) {
+        room.finishOrder = room.finishOrder.map((entryId) =>
+            entryId === previousSocketId ? socketId : entryId,
+        );
+    }
+}
+
+function removeDisconnectedPlayers(room: Room) {
+    for (const [sessionId, player] of room.players.entries()) {
+        if (player.connected) continue;
+        if (player.disconnectTimeout) {
+            clearTimeout(player.disconnectTimeout);
+        }
+        room.players.delete(sessionId);
+        room.finishOrder = room.finishOrder.filter((id) => id !== player.id);
+    }
+}
+
+function buildRoundResults(room: Room) {
+    if (room.gameType === "bowman") {
+        return [...room.players.values()]
+            .map((player) => ({
+                id: player.id,
+                name: player.name,
+                totalScore: player.bowmanState?.totalScore ?? 0,
+                finishTime: player.bowmanState?.finishTime ?? null,
+                shots: player.bowmanState?.shots ?? [],
+                rank: null as number | null,
+            }))
+            .sort((a, b) => {
+                if (b.totalScore !== a.totalScore)
+                    return b.totalScore - a.totalScore;
+                if (a.finishTime !== null && b.finishTime !== null)
+                    return a.finishTime - b.finishTime;
+                if (a.finishTime !== null) return -1;
+                if (b.finishTime !== null) return 1;
+                return 0;
+            })
+            .map((result, index) => ({ ...result, rank: index + 1 }));
+    }
+
+    if (room.gameType === "rushhour") {
+        return [...room.players.values()]
+            .map((player) => ({
+                id: player.id,
+                name: player.name,
+                rank: player.rank,
+                moves: player.rushHourState?.moves ?? null,
+                finishTime: player.rushHourState?.finishTime ?? null,
+            }))
+            .sort((a, b) => {
+                if (a.rank !== null && b.rank !== null) return a.rank - b.rank;
+                if (a.rank !== null) return -1;
+                if (b.rank !== null) return 1;
+                return 0;
+            });
+    }
+
+    if (room.gameType === "lightsout") {
+        return [...room.players.values()]
+            .map((player) => ({
+                id: player.id,
+                name: player.name,
+                rank: player.rank,
+                moves: player.lightsOutState?.moves ?? null,
+                finishTime: player.lightsOutState?.finishTime ?? null,
+            }))
+            .sort((a, b) => {
+                if (a.rank !== null && b.rank !== null) return a.rank - b.rank;
+                if (a.rank !== null) return -1;
+                if (b.rank !== null) return 1;
+                return 0;
+            });
+    }
+
+    if (room.gameType === "codebreaker") {
+        const ranked = [...room.players.values()]
+            .map((player) => ({
+                id: player.id,
+                name: player.name,
+                attempts: player.codebreakerState?.guesses.length ?? 0,
+                finishTime: player.codebreakerState?.finishTime ?? null,
+                solved: player.codebreakerState?.solved ?? false,
+            }))
+            .sort((a, b) => {
+                if (a.solved !== b.solved) return a.solved ? -1 : 1;
+                if (a.solved && b.solved) {
+                    if (a.attempts !== b.attempts)
+                        return a.attempts - b.attempts;
+                    if (a.finishTime !== null && b.finishTime !== null)
+                        return a.finishTime - b.finishTime;
+                    if (a.finishTime !== null) return -1;
+                    if (b.finishTime !== null) return 1;
+                }
+                return a.attempts - b.attempts;
+            });
+
+        let nextRank = 1;
+        return ranked.map((entry) => ({
+            ...entry,
+            rank: entry.solved ? nextRank++ : null,
+        }));
+    }
+
+    if (room.gameType === "pipeconnect") {
+        return [...room.players.values()]
+            .map((player) => ({
+                id: player.id,
+                name: player.name,
+                rank: player.rank,
+                moves: player.pipeConnectState?.moves ?? null,
+                finishTime: player.pipeConnectState?.finishTime ?? null,
+            }))
+            .sort((a, b) => {
+                if (a.rank !== null && b.rank !== null) return a.rank - b.rank;
+                if (a.rank !== null) return -1;
+                if (b.rank !== null) return 1;
+                return 0;
+            });
+    }
+
+    if (room.gameType === "simoncopy") {
+        const ranked = [...room.players.values()]
+            .map((player) => ({
+                id: player.id,
+                name: player.name,
+                roundReached: player.simonCopyState?.currentRound ?? 1,
+                finishTime: player.simonCopyState?.finishTime ?? null,
+                solved: player.simonCopyState?.solved ?? false,
+                failed: player.simonCopyState?.failed ?? false,
+            }))
+            .sort((a, b) => {
+                if (a.solved !== b.solved) return a.solved ? -1 : 1;
+                if (a.solved && b.solved) {
+                    if (a.finishTime !== null && b.finishTime !== null)
+                        return a.finishTime - b.finishTime;
+                    if (a.finishTime !== null) return -1;
+                    if (b.finishTime !== null) return 1;
+                }
+                return b.roundReached - a.roundReached;
+            });
+
+        let nextRank = 1;
+        return ranked.map((entry) => ({
+            ...entry,
+            rank: entry.solved ? nextRank++ : null,
+        }));
+    }
+
+    if (room.gameType === "memorysequenceplus") {
+        const ranked = [...room.players.values()]
+            .map((player) => ({
+                id: player.id,
+                name: player.name,
+                roundReached: player.memorySequencePlusState?.currentRound ?? 1,
+                finishTime: player.memorySequencePlusState?.finishTime ?? null,
+                solved: player.memorySequencePlusState?.solved ?? false,
+                failed: player.memorySequencePlusState?.failed ?? false,
+            }))
+            .sort((a, b) => {
+                if (a.solved !== b.solved) return a.solved ? -1 : 1;
+                if (a.solved && b.solved) {
+                    if (a.finishTime !== null && b.finishTime !== null)
+                        return a.finishTime - b.finishTime;
+                    if (a.finishTime !== null) return -1;
+                    if (b.finishTime !== null) return 1;
+                }
+                return b.roundReached - a.roundReached;
+            });
+
+        let nextRank = 1;
+        return ranked.map((entry) => ({
+            ...entry,
+            rank: entry.solved ? nextRank++ : null,
+        }));
+    }
+
+    return [...room.players.values()]
+        .map((player) => ({
+            id: player.id,
+            name: player.name,
+            rank: player.rank,
+            moves: player.puzzleState?.moves ?? null,
+            solveTime: player.puzzleState?.solveTime ?? null,
+        }))
+        .sort((a, b) => {
+            if (a.rank !== null && b.rank !== null) return a.rank - b.rank;
+            if (a.rank !== null) return -1;
+            if (b.rank !== null) return 1;
+            return 0;
+        });
+}
+
+function emitPlayerResumeState(
+    socket: Parameters<typeof io.on>[1] extends (socket: infer T) => void
+        ? T
+        : never,
+    room: Room,
+    player: Player,
+) {
+    socket.emit("room:settings", {
+        totalRounds: room.totalRounds,
+        currentRound: room.currentRound,
+    });
+    socket.emit("room:gameType", { gameType: room.gameType });
+
+    if (room.phase === "lobby") {
+        return;
+    }
+
+    if (room.phase === "shuffling") {
+        socket.emit("round:shuffle", {
+            gameType: room.roundSequence[room.currentRound] ?? room.gameType,
+            roundNumber: room.currentRound + 1,
+            totalRounds: room.totalRounds,
+            durationMs: ROUND_SHUFFLE_DURATION_MS,
+            landingBufferMs: ROUND_SHUFFLE_LANDING_BUFFER_MS,
+        });
+        return;
+    }
+
+    if (room.phase === "results") {
+        const results = buildRoundResults(room);
+        const lastRoundPoints = new Map<string, number>();
+        const playerCount = room.players.size;
+
+        for (const entry of results as Array<{
+            id: string;
+            rank?: number | null;
+        }>) {
+            const points =
+                entry.rank !== null && entry.rank !== undefined
+                    ? Math.max(playerCount - entry.rank + 1, 1)
+                    : 0;
+            lastRoundPoints.set(entry.id, points);
+        }
+
+        socket.emit("game:over", {
+            results,
+            gameType: room.gameType,
+            roundNumber: room.currentRound,
+            totalRounds: room.totalRounds,
+            matchOver: room.currentRound >= room.totalRounds,
+            standings: buildStandings(room, lastRoundPoints),
+        });
+        return;
+    }
+
+    const basePayload = {
+        gameType: room.gameType,
+        roundNumber: room.currentRound,
+        totalRounds: room.totalRounds,
+    };
+
+    if (room.gameType === "klotski" && player.puzzleState) {
+        socket.emit("game:started", {
+            ...basePayload,
+            board: player.puzzleState.board,
+            pieces: player.puzzleState.pieces,
+        });
+        setTimeout(() => {
+            socket.emit("state:update", {
+                board: player.puzzleState?.board,
+                pieces: player.puzzleState?.pieces,
+                moves: player.puzzleState?.moves ?? 0,
+                solved: player.puzzleState?.solved ?? false,
+            });
+            if (player.rank !== null && player.puzzleState?.solved) {
+                socket.emit("puzzle:solved", {
+                    rank: player.rank,
+                    moves: player.puzzleState.moves,
+                    solveTime: player.puzzleState.solveTime,
+                });
+            }
+        }, 0);
+        return;
+    }
+
+    if (room.gameType === "bowman" && player.bowmanState) {
+        socket.emit("game:started", {
+            ...basePayload,
+            wind: player.bowmanState.wind,
+        });
+        setTimeout(() => {
+            socket.emit("bowman:sync", {
+                shots: player.bowmanState?.shots ?? [],
+                totalScore: player.bowmanState?.totalScore ?? 0,
+                done: player.bowmanState?.done ?? false,
+            });
+        }, 0);
+        return;
+    }
+
+    if (room.gameType === "rushhour" && player.rushHourState) {
+        socket.emit("game:started", {
+            ...basePayload,
+            vehicles: player.rushHourState.vehicles,
+        });
+        setTimeout(() => {
+            socket.emit("rushhour:update", {
+                vehicles: player.rushHourState?.vehicles ?? [],
+                moves: player.rushHourState?.moves ?? 0,
+                solved: player.rushHourState?.solved ?? false,
+            });
+            if (player.rank !== null && player.rushHourState?.solved) {
+                socket.emit("rushhour:solved", {
+                    rank: player.rank,
+                    moves: player.rushHourState.moves,
+                    finishTime: player.rushHourState.finishTime,
+                });
+            }
+        }, 0);
+        return;
+    }
+
+    if (room.gameType === "lightsout" && player.lightsOutState) {
+        socket.emit("game:started", {
+            ...basePayload,
+            board: player.lightsOutState.board,
+        });
+        setTimeout(() => {
+            socket.emit("lightsout:update", {
+                board: player.lightsOutState?.board ?? [],
+                moves: player.lightsOutState?.moves ?? 0,
+                solved: player.lightsOutState?.solved ?? false,
+            });
+            if (player.rank !== null && player.lightsOutState?.solved) {
+                socket.emit("lightsout:solved", {
+                    rank: player.rank,
+                    moves: player.lightsOutState.moves,
+                    finishTime: player.lightsOutState.finishTime,
+                });
+            }
+        }, 0);
+        return;
+    }
+
+    if (room.gameType === "codebreaker" && player.codebreakerState) {
+        socket.emit("game:started", {
+            ...basePayload,
+            palette: [...CODEBREAKER_PALETTE],
+            codeLength: CODEBREAKER_CODE_LENGTH,
+            maxGuesses: CODEBREAKER_MAX_GUESSES,
+        });
+        setTimeout(() => {
+            socket.emit("codebreaker:update", {
+                guesses: player.codebreakerState?.guesses ?? [],
+                solved: player.codebreakerState?.solved ?? false,
+                done: player.codebreakerState?.done ?? false,
+                finishTime: player.codebreakerState?.finishTime ?? null,
+            });
+            if (
+                player.codebreakerState?.solved &&
+                player.codebreakerState.finishTime !== null
+            ) {
+                socket.emit("codebreaker:solved", {
+                    attempts: player.codebreakerState.guesses.length,
+                    finishTime: player.codebreakerState.finishTime,
+                });
+            }
+        }, 0);
+        return;
+    }
+
+    if (room.gameType === "pipeconnect" && player.pipeConnectState) {
+        socket.emit("game:started", {
+            ...basePayload,
+            tiles: toPublicPipeConnectTiles(player.pipeConnectState.tiles),
+        });
+        setTimeout(() => {
+            socket.emit("pipeconnect:update", {
+                tiles: player.pipeConnectState
+                    ? toPublicPipeConnectTiles(player.pipeConnectState.tiles)
+                    : [],
+                moves: player.pipeConnectState?.moves ?? 0,
+                solved: player.pipeConnectState?.solved ?? false,
+            });
+            if (player.rank !== null && player.pipeConnectState?.solved) {
+                socket.emit("pipeconnect:solved", {
+                    rank: player.rank,
+                    moves: player.pipeConnectState.moves,
+                    finishTime: player.pipeConnectState.finishTime,
+                });
+            }
+        }, 0);
+        return;
+    }
+
+    if (room.gameType === "simoncopy" && player.simonCopyState) {
+        socket.emit("game:started", {
+            ...basePayload,
+            sequence: player.simonCopyState.sequence,
+            maxRounds: SIMON_COPY_MAX_ROUNDS,
+            colors: [...SIMON_COPY_COLORS],
+        });
+        setTimeout(() => {
+            socket.emit("simoncopy:update", {
+                currentRound: player.simonCopyState?.currentRound ?? 1,
+                solved: player.simonCopyState?.solved ?? false,
+                done: player.simonCopyState?.done ?? false,
+                failed: player.simonCopyState?.failed ?? false,
+                finishTime: player.simonCopyState?.finishTime ?? null,
+            });
+            if (player.rank !== null && player.simonCopyState?.solved) {
+                socket.emit("simoncopy:solved", {
+                    rank: player.rank,
+                    roundReached: player.simonCopyState.currentRound,
+                    finishTime: player.simonCopyState.finishTime,
+                });
+            }
+        }, 0);
+        return;
+    }
+
+    if (
+        room.gameType === "memorysequenceplus" &&
+        player.memorySequencePlusState
+    ) {
+        socket.emit("game:started", {
+            ...basePayload,
+            sequence: player.memorySequencePlusState.sequence,
+            maxRounds: MEMORY_SEQUENCE_PLUS_MAX_ROUNDS,
+            gridSize: MEMORY_SEQUENCE_PLUS_GRID_SIZE,
+        });
+        setTimeout(() => {
+            socket.emit("memorysequenceplus:update", {
+                currentRound: player.memorySequencePlusState?.currentRound ?? 1,
+                solved: player.memorySequencePlusState?.solved ?? false,
+                done: player.memorySequencePlusState?.done ?? false,
+                failed: player.memorySequencePlusState?.failed ?? false,
+                finishTime: player.memorySequencePlusState?.finishTime ?? null,
+            });
+            if (
+                player.rank !== null &&
+                player.memorySequencePlusState?.solved
+            ) {
+                socket.emit("memorysequenceplus:solved", {
+                    rank: player.rank,
+                    roundReached: player.memorySequencePlusState.currentRound,
+                    finishTime: player.memorySequencePlusState.finishTime,
+                });
+            }
+        }, 0);
+    }
 }
 
 function clearRoundState(room: Room) {
@@ -410,29 +897,42 @@ io.on("connection", (socket) => {
         ({
             roomCode,
             playerName,
+            playerSessionId,
         }: {
             roomCode: string;
             playerName: string;
+            playerSessionId: string;
         }) => {
             const code = roomCode.toUpperCase().trim();
             const room = getRoom(code);
+            const normalizedName = playerName?.trim().slice(0, 16);
+            const normalizedSessionId = playerSessionId?.trim();
 
             if (!room) {
                 socket.emit("error", { message: "Room not found." });
                 return;
             }
-            if (room.phase !== "lobby") {
-                socket.emit("error", { message: "Game already in progress." });
+            if (!normalizedName) {
+                socket.emit("error", { message: "Name required." });
                 return;
             }
-            if (!playerName?.trim()) {
+            if (!normalizedSessionId) {
                 socket.emit("error", { message: "Name required." });
                 return;
             }
 
-            const player = {
+            const existingPlayer = room.players.get(normalizedSessionId);
+            if (room.phase !== "lobby" && !existingPlayer) {
+                socket.emit("error", { message: "Game already in progress." });
+                return;
+            }
+
+            const player = existingPlayer ?? {
                 id: socket.id,
-                name: playerName.trim().slice(0, 16),
+                sessionId: normalizedSessionId,
+                name: normalizedName,
+                connected: true,
+                disconnectTimeout: null,
                 puzzleState: null,
                 bowmanState: null,
                 rushHourState: null,
@@ -445,20 +945,17 @@ io.on("connection", (socket) => {
                 matchPoints: 0,
                 roundsWon: 0,
             };
-            room.players.set(socket.id, player);
+
+            player.name = normalizedName;
+            updatePlayerSocket(room, player, socket.id);
+            room.players.set(normalizedSessionId, player);
             socket.join(code);
 
-            const players = [...room.players.values()].map(
-                ({ id, name, rank }) => ({ id, name, rank }),
+            emitRoomUpdated(room);
+            emitPlayerResumeState(socket, room, player);
+            console.log(
+                `[player:join] ${player.name} → ${code}${existingPlayer ? " (rejoin)" : ""}`,
             );
-            io.to(code).emit("room:updated", { players });
-            socket.emit("room:settings", {
-                totalRounds: room.totalRounds,
-                currentRound: room.currentRound,
-            });
-            // Also tell the joining player the current game type
-            socket.emit("room:gameType", { gameType: room.gameType });
-            console.log(`[player:join] ${player.name} → ${code}`);
         },
     );
 
@@ -467,6 +964,9 @@ io.on("connection", (socket) => {
         const room = getRoomBySocket(socket.id);
         if (!room || room.hostSocketId !== socket.id) return;
         if (room.phase !== "lobby") return;
+
+        removeDisconnectedPlayers(room);
+        emitRoomUpdated(room);
 
         room.totalRounds = sanitizeTotalRounds(room.totalRounds);
         room.currentRound = 0;
@@ -491,7 +991,7 @@ io.on("connection", (socket) => {
             )
                 return;
 
-            const player = room.players.get(socket.id);
+            const player = getPlayerBySocket(room, socket.id);
             if (!player?.puzzleState || player.puzzleState.solved) return;
 
             const { ok, state } = applyMove(
@@ -512,9 +1012,9 @@ io.on("connection", (socket) => {
 
             let rank: number | null = null;
             if (state.solved) {
-                if (!room.finishOrder.includes(socket.id))
-                    room.finishOrder.push(socket.id);
-                rank = room.finishOrder.indexOf(socket.id) + 1;
+                if (!room.finishOrder.includes(player.id))
+                    room.finishOrder.push(player.id);
+                rank = room.finishOrder.indexOf(player.id) + 1;
                 player.rank = rank;
                 socket.emit("puzzle:solved", {
                     rank,
@@ -548,7 +1048,7 @@ io.on("connection", (socket) => {
             if (!room || room.phase !== "playing" || room.gameType !== "bowman")
                 return;
 
-            const player = room.players.get(socket.id);
+            const player = getPlayerBySocket(room, socket.id);
             if (!player?.bowmanState || player.bowmanState.done) return;
 
             const { ok, state, result } = processShot(
@@ -576,9 +1076,9 @@ io.on("connection", (socket) => {
                 wind: state.wind,
             });
 
-            if (state.done && !room.finishOrder.includes(socket.id)) {
-                room.finishOrder.push(socket.id);
-                player.rank = room.finishOrder.indexOf(socket.id) + 1;
+            if (state.done && !room.finishOrder.includes(player.id)) {
+                room.finishOrder.push(player.id);
+                player.rank = room.finishOrder.indexOf(player.id) + 1;
             }
 
             const allDone = [...room.players.values()].every(
@@ -600,7 +1100,7 @@ io.on("connection", (socket) => {
             )
                 return;
 
-            const player = room.players.get(socket.id);
+            const player = getPlayerBySocket(room, socket.id);
             if (!player?.rushHourState || player.rushHourState.solved) return;
 
             const { ok, state } = applyRushHourMove(
@@ -620,9 +1120,9 @@ io.on("connection", (socket) => {
 
             let rank: number | null = null;
             if (state.solved) {
-                if (!room.finishOrder.includes(socket.id))
-                    room.finishOrder.push(socket.id);
-                rank = room.finishOrder.indexOf(socket.id) + 1;
+                if (!room.finishOrder.includes(player.id))
+                    room.finishOrder.push(player.id);
+                rank = room.finishOrder.indexOf(player.id) + 1;
                 player.rank = rank;
                 socket.emit("rushhour:solved", {
                     rank,
@@ -659,7 +1159,7 @@ io.on("connection", (socket) => {
             )
                 return;
 
-            const player = room.players.get(socket.id);
+            const player = getPlayerBySocket(room, socket.id);
             if (!player?.lightsOutState || player.lightsOutState.solved) return;
 
             const { ok, state } = applyLightsOutMove(
@@ -679,9 +1179,9 @@ io.on("connection", (socket) => {
 
             let rank: number | null = null;
             if (state.solved) {
-                if (!room.finishOrder.includes(socket.id))
-                    room.finishOrder.push(socket.id);
-                rank = room.finishOrder.indexOf(socket.id) + 1;
+                if (!room.finishOrder.includes(player.id))
+                    room.finishOrder.push(player.id);
+                rank = room.finishOrder.indexOf(player.id) + 1;
                 player.rank = rank;
                 socket.emit("lightsout:solved", {
                     rank,
@@ -716,7 +1216,7 @@ io.on("connection", (socket) => {
         )
             return;
 
-        const player = room.players.get(socket.id);
+        const player = getPlayerBySocket(room, socket.id);
         if (!player?.codebreakerState || player.codebreakerState.done) return;
 
         const { ok, state } = processCodebreakerGuess(
@@ -766,7 +1266,7 @@ io.on("connection", (socket) => {
         )
             return;
 
-        const player = room.players.get(socket.id);
+        const player = getPlayerBySocket(room, socket.id);
         if (!player?.pipeConnectState || player.pipeConnectState.solved) return;
 
         const { ok, state } = applyPipeConnectRotate(
@@ -785,10 +1285,10 @@ io.on("connection", (socket) => {
 
         let rank: number | null = null;
         if (state.solved) {
-            if (!room.finishOrder.includes(socket.id)) {
-                room.finishOrder.push(socket.id);
+            if (!room.finishOrder.includes(player.id)) {
+                room.finishOrder.push(player.id);
             }
-            rank = room.finishOrder.indexOf(socket.id) + 1;
+            rank = room.finishOrder.indexOf(player.id) + 1;
             player.rank = rank;
             socket.emit("pipeconnect:solved", {
                 rank,
@@ -818,7 +1318,7 @@ io.on("connection", (socket) => {
         if (!room || room.phase !== "playing" || room.gameType !== "simoncopy")
             return;
 
-        const player = room.players.get(socket.id);
+        const player = getPlayerBySocket(room, socket.id);
         if (!player?.simonCopyState || player.simonCopyState.done) return;
 
         const latestColor = inputs.at(-1) ?? null;
@@ -840,10 +1340,10 @@ io.on("connection", (socket) => {
 
         let rank: number | null = null;
         if (state.solved) {
-            if (!room.finishOrder.includes(socket.id)) {
-                room.finishOrder.push(socket.id);
+            if (!room.finishOrder.includes(player.id)) {
+                room.finishOrder.push(player.id);
             }
-            rank = room.finishOrder.indexOf(socket.id) + 1;
+            rank = room.finishOrder.indexOf(player.id) + 1;
             player.rank = rank;
             socket.emit("simoncopy:solved", {
                 rank,
@@ -880,7 +1380,7 @@ io.on("connection", (socket) => {
             )
                 return;
 
-            const player = room.players.get(socket.id);
+            const player = getPlayerBySocket(room, socket.id);
             if (
                 !player?.memorySequencePlusState ||
                 player.memorySequencePlusState.done
@@ -906,10 +1406,10 @@ io.on("connection", (socket) => {
 
             let rank: number | null = null;
             if (state.solved) {
-                if (!room.finishOrder.includes(socket.id)) {
-                    room.finishOrder.push(socket.id);
+                if (!room.finishOrder.includes(player.id)) {
+                    room.finishOrder.push(player.id);
                 }
-                rank = room.finishOrder.indexOf(socket.id) + 1;
+                rank = room.finishOrder.indexOf(player.id) + 1;
                 player.rank = rank;
                 socket.emit("memorysequenceplus:solved", {
                     rank,
@@ -969,10 +1469,7 @@ io.on("connection", (socket) => {
         }
 
         io.to(room.code).emit("game:reset");
-        const players = [...room.players.values()].map(
-            ({ id, name, rank }) => ({ id, name, rank }),
-        );
-        io.to(room.code).emit("room:updated", { players });
+        emitRoomUpdated(room);
         console.log(`[host:reset] room ${room.code}`);
     });
 
@@ -987,11 +1484,29 @@ io.on("connection", (socket) => {
             io.to(room.code).emit("error", { message: "Host disconnected." });
             deleteRoom(room.code);
         } else {
-            room.players.delete(socket.id);
-            const players = [...room.players.values()].map(
-                ({ id, name, rank }) => ({ id, name, rank }),
-            );
-            io.to(room.code).emit("room:updated", { players });
+            const player = getPlayerBySocket(room, socket.id);
+            if (!player) return;
+
+            player.connected = false;
+            if (player.disconnectTimeout) {
+                clearTimeout(player.disconnectTimeout);
+            }
+
+            player.disconnectTimeout = setTimeout(() => {
+                const currentRoom = getRoom(room.code);
+                const currentPlayer = currentRoom?.players.get(
+                    player.sessionId,
+                );
+                if (!currentRoom || !currentPlayer || currentPlayer.connected) {
+                    return;
+                }
+
+                currentRoom.players.delete(player.sessionId);
+                currentRoom.finishOrder = currentRoom.finishOrder.filter(
+                    (id) => id !== currentPlayer.id,
+                );
+                emitRoomUpdated(currentRoom);
+            }, PLAYER_RECONNECT_GRACE_MS);
         }
     });
 });
@@ -1002,171 +1517,7 @@ function endGame(roomCode: string) {
     if (room.phase !== "playing") return;
     room.phase = "results";
 
-    let results: object[];
-
-    if (room.gameType === "bowman") {
-        results = [...room.players.values()]
-            .map((player) => ({
-                id: player.id,
-                name: player.name,
-                totalScore: player.bowmanState?.totalScore ?? 0,
-                finishTime: player.bowmanState?.finishTime ?? null,
-                shots: player.bowmanState?.shots ?? [],
-                rank: null as number | null,
-            }))
-            .sort((a, b) => {
-                if (b.totalScore !== a.totalScore)
-                    return b.totalScore - a.totalScore;
-                if (a.finishTime !== null && b.finishTime !== null)
-                    return a.finishTime - b.finishTime;
-                if (a.finishTime !== null) return -1;
-                if (b.finishTime !== null) return 1;
-                return 0;
-            })
-            .map((r, i) => ({ ...r, rank: i + 1 }));
-    } else if (room.gameType === "rushhour") {
-        results = [...room.players.values()]
-            .map((player) => ({
-                id: player.id,
-                name: player.name,
-                rank: player.rank,
-                moves: player.rushHourState?.moves ?? null,
-                finishTime: player.rushHourState?.finishTime ?? null,
-            }))
-            .sort((a, b) => {
-                if (a.rank !== null && b.rank !== null) return a.rank - b.rank;
-                if (a.rank !== null) return -1;
-                if (b.rank !== null) return 1;
-                return 0;
-            });
-    } else if (room.gameType === "lightsout") {
-        results = [...room.players.values()]
-            .map((player) => ({
-                id: player.id,
-                name: player.name,
-                rank: player.rank,
-                moves: player.lightsOutState?.moves ?? null,
-                finishTime: player.lightsOutState?.finishTime ?? null,
-            }))
-            .sort((a, b) => {
-                if (a.rank !== null && b.rank !== null) return a.rank - b.rank;
-                if (a.rank !== null) return -1;
-                if (b.rank !== null) return 1;
-                return 0;
-            });
-    } else if (room.gameType === "codebreaker") {
-        const ranked = [...room.players.values()]
-            .map((player) => ({
-                id: player.id,
-                name: player.name,
-                attempts: player.codebreakerState?.guesses.length ?? 0,
-                finishTime: player.codebreakerState?.finishTime ?? null,
-                solved: player.codebreakerState?.solved ?? false,
-            }))
-            .sort((a, b) => {
-                if (a.solved !== b.solved) return a.solved ? -1 : 1;
-                if (a.solved && b.solved) {
-                    if (a.attempts !== b.attempts)
-                        return a.attempts - b.attempts;
-                    if (a.finishTime !== null && b.finishTime !== null) {
-                        return a.finishTime - b.finishTime;
-                    }
-                    if (a.finishTime !== null) return -1;
-                    if (b.finishTime !== null) return 1;
-                }
-                return a.attempts - b.attempts;
-            });
-
-        let nextRank = 1;
-        results = ranked.map((entry) => ({
-            ...entry,
-            rank: entry.solved ? nextRank++ : null,
-        }));
-    } else if (room.gameType === "pipeconnect") {
-        results = [...room.players.values()]
-            .map((player) => ({
-                id: player.id,
-                name: player.name,
-                rank: player.rank,
-                moves: player.pipeConnectState?.moves ?? null,
-                finishTime: player.pipeConnectState?.finishTime ?? null,
-            }))
-            .sort((a, b) => {
-                if (a.rank !== null && b.rank !== null) return a.rank - b.rank;
-                if (a.rank !== null) return -1;
-                if (b.rank !== null) return 1;
-                return 0;
-            });
-    } else if (room.gameType === "simoncopy") {
-        const ranked = [...room.players.values()]
-            .map((player) => ({
-                id: player.id,
-                name: player.name,
-                roundReached: player.simonCopyState?.currentRound ?? 1,
-                finishTime: player.simonCopyState?.finishTime ?? null,
-                solved: player.simonCopyState?.solved ?? false,
-                failed: player.simonCopyState?.failed ?? false,
-            }))
-            .sort((a, b) => {
-                if (a.solved !== b.solved) return a.solved ? -1 : 1;
-                if (a.solved && b.solved) {
-                    if (a.finishTime !== null && b.finishTime !== null) {
-                        return a.finishTime - b.finishTime;
-                    }
-                    if (a.finishTime !== null) return -1;
-                    if (b.finishTime !== null) return 1;
-                }
-                return b.roundReached - a.roundReached;
-            });
-
-        let nextRank = 1;
-        results = ranked.map((entry) => ({
-            ...entry,
-            rank: entry.solved ? nextRank++ : null,
-        }));
-    } else if (room.gameType === "memorysequenceplus") {
-        const ranked = [...room.players.values()]
-            .map((player) => ({
-                id: player.id,
-                name: player.name,
-                roundReached: player.memorySequencePlusState?.currentRound ?? 1,
-                finishTime: player.memorySequencePlusState?.finishTime ?? null,
-                solved: player.memorySequencePlusState?.solved ?? false,
-                failed: player.memorySequencePlusState?.failed ?? false,
-            }))
-            .sort((a, b) => {
-                if (a.solved !== b.solved) return a.solved ? -1 : 1;
-                if (a.solved && b.solved) {
-                    if (a.finishTime !== null && b.finishTime !== null) {
-                        return a.finishTime - b.finishTime;
-                    }
-                    if (a.finishTime !== null) return -1;
-                    if (b.finishTime !== null) return 1;
-                }
-                return b.roundReached - a.roundReached;
-            });
-
-        let nextRank = 1;
-        results = ranked.map((entry) => ({
-            ...entry,
-            rank: entry.solved ? nextRank++ : null,
-        }));
-    } else {
-        results = [...room.players.values()]
-            .map((player) => ({
-                id: player.id,
-                name: player.name,
-                rank: player.rank,
-                moves: player.puzzleState?.moves ?? null,
-                solveTime: player.puzzleState?.solveTime ?? null,
-            }))
-            .sort((a, b) => {
-                if (a.rank !== null && b.rank !== null) return a.rank - b.rank;
-                if (a.rank !== null) return -1;
-                if (b.rank !== null) return 1;
-                return 0;
-            });
-    }
+    const results = buildRoundResults(room);
 
     const lastRoundPoints = new Map<string, number>();
     const playerCount = room.players.size;
@@ -1175,7 +1526,7 @@ function endGame(roomCode: string) {
         id: string;
         rank?: number | null;
     }>) {
-        const player = room.players.get(entry.id);
+        const player = getPlayerById(room, entry.id);
         if (!player) continue;
 
         const points =

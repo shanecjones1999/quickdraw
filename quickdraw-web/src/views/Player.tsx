@@ -3,7 +3,9 @@ import { socket } from "../socket";
 import { useSocket } from "../hooks/useSocket";
 import { useTimer, formatTime } from "../hooks/useTimer";
 import { useCellSize } from "../hooks/useCellSize";
+import { ConnectionNotice } from "../components/ConnectionNotice";
 import { formatGameLabel } from "../gameMeta";
+import { useConnectionNotice } from "../hooks/useConnectionNotice";
 import { KlotskiBoard } from "../components/KlotskiBoard";
 import { RoundShuffleOverlay } from "../components/RoundShuffleOverlay";
 import { BowmanPlayer } from "./BowmanPlayer";
@@ -88,6 +90,8 @@ function describeRoundResult(result: RoundResult, gameType: GameType): string {
 interface Props {
     roomCode: string;
     playerName: string;
+    playerSessionId: string;
+    resumeSession?: boolean;
 }
 
 interface ShuffleState {
@@ -98,7 +102,12 @@ interface ShuffleState {
     landingBufferMs: number;
 }
 
-export function Player({ roomCode, playerName }: Props) {
+export function Player({
+    roomCode,
+    playerName,
+    playerSessionId,
+    resumeSession = false,
+}: Props) {
     const [gameType, setGameType] = useState<GameType>("klotski");
     const [phase, setPhase] = useState<Phase>("waiting");
     const [playerCount, setPlayerCount] = useState<number | null>(null);
@@ -133,6 +142,39 @@ export function Player({ roomCode, playerName }: Props) {
     const [shuffleState, setShuffleState] = useState<ShuffleState | null>(null);
     const elapsed = useTimer(startTime);
     const cellSize = useCellSize();
+    const { notice, dismissNotice, retryConnection } = useConnectionNotice({
+        role: "player",
+        roomCode,
+        playerName,
+        playerSessionId,
+    });
+
+    useEffect(() => {
+        if (!resumeSession) return;
+
+        const normalizedRoomCode = roomCode.toUpperCase().trim();
+        const normalizedPlayerName = playerName.trim();
+
+        const joinRoom = () => {
+            socket.emit("player:join", {
+                roomCode: normalizedRoomCode,
+                playerName: normalizedPlayerName,
+                playerSessionId,
+            });
+        };
+
+        if (socket.connected) {
+            joinRoom();
+            return;
+        }
+
+        socket.connect();
+        socket.once("connect", joinRoom);
+
+        return () => {
+            socket.off("connect", joinRoom);
+        };
+    }, [playerName, playerSessionId, resumeSession, roomCode]);
 
     // Sync game type when host changes it in the lobby
     const onRoomUpdated = useCallback(
@@ -397,12 +439,25 @@ export function Player({ roomCode, playerName }: Props) {
     // ── Bowman: hand off to dedicated view ──────────────────────────────────
     if (gameType === "bowman" && phase === "playing") {
         return (
-            <BowmanPlayer
-                key={viewKey}
-                roomCode={roomCode}
-                playerName={playerName}
-                initialWind={bowmanWind}
-            />
+            <>
+                {notice && (
+                    <ConnectionNotice
+                        floating
+                        tone={notice.tone}
+                        title={notice.title}
+                        message={notice.message}
+                        actionLabel="Retry now"
+                        onAction={retryConnection}
+                        onDismiss={dismissNotice}
+                    />
+                )}
+                <BowmanPlayer
+                    key={viewKey}
+                    roomCode={roomCode}
+                    playerName={playerName}
+                    initialWind={bowmanWind}
+                />
+            </>
         );
     }
 
@@ -412,38 +467,77 @@ export function Player({ roomCode, playerName }: Props) {
         codebreakerConfig
     ) {
         return (
-            <CodebreakerPlayer
-                key={viewKey}
-                roomCode={roomCode}
-                playerName={playerName}
-                palette={codebreakerConfig.palette}
-                codeLength={codebreakerConfig.codeLength}
-                maxGuesses={codebreakerConfig.maxGuesses}
-            />
+            <>
+                {notice && (
+                    <ConnectionNotice
+                        floating
+                        tone={notice.tone}
+                        title={notice.title}
+                        message={notice.message}
+                        actionLabel="Retry now"
+                        onAction={retryConnection}
+                        onDismiss={dismissNotice}
+                    />
+                )}
+                <CodebreakerPlayer
+                    key={viewKey}
+                    roomCode={roomCode}
+                    playerName={playerName}
+                    palette={codebreakerConfig.palette}
+                    codeLength={codebreakerConfig.codeLength}
+                    maxGuesses={codebreakerConfig.maxGuesses}
+                />
+            </>
         );
     }
 
     if (gameType === "lightsout" && phase === "playing" && lightsOutBoard) {
         return (
-            <LightsOutPlayer
-                key={viewKey}
-                roomCode={roomCode}
-                playerName={playerName}
-                initialBoard={lightsOutBoard}
-            />
+            <>
+                {notice && (
+                    <ConnectionNotice
+                        floating
+                        tone={notice.tone}
+                        title={notice.title}
+                        message={notice.message}
+                        actionLabel="Retry now"
+                        onAction={retryConnection}
+                        onDismiss={dismissNotice}
+                    />
+                )}
+                <LightsOutPlayer
+                    key={viewKey}
+                    roomCode={roomCode}
+                    playerName={playerName}
+                    initialBoard={lightsOutBoard}
+                />
+            </>
         );
     }
 
     if (gameType === "simoncopy" && phase === "playing" && simonCopyConfig) {
         return (
-            <SimonCopyPlayer
-                key={viewKey}
-                roomCode={roomCode}
-                playerName={playerName}
-                sequence={simonCopyConfig.sequence}
-                colors={simonCopyConfig.colors}
-                maxRounds={simonCopyConfig.maxRounds}
-            />
+            <>
+                {notice && (
+                    <ConnectionNotice
+                        floating
+                        tone={notice.tone}
+                        title={notice.title}
+                        message={notice.message}
+                        actionLabel="Retry now"
+                        onAction={retryConnection}
+                        onDismiss={dismissNotice}
+                    />
+                )}
+                <SimonCopyPlayer
+                    key={viewKey}
+                    roomCode={roomCode}
+                    playerName={playerName}
+                    sequence={simonCopyConfig.sequence}
+                    colors={simonCopyConfig.colors}
+                    maxRounds={simonCopyConfig.maxRounds}
+                />
+            </>
         );
     }
 
@@ -453,37 +547,76 @@ export function Player({ roomCode, playerName }: Props) {
         memorySequencePlusConfig
     ) {
         return (
-            <MemorySequencePlusPlayer
-                key={viewKey}
-                roomCode={roomCode}
-                playerName={playerName}
-                sequence={memorySequencePlusConfig.sequence}
-                gridSize={memorySequencePlusConfig.gridSize}
-                maxRounds={memorySequencePlusConfig.maxRounds}
-            />
+            <>
+                {notice && (
+                    <ConnectionNotice
+                        floating
+                        tone={notice.tone}
+                        title={notice.title}
+                        message={notice.message}
+                        actionLabel="Retry now"
+                        onAction={retryConnection}
+                        onDismiss={dismissNotice}
+                    />
+                )}
+                <MemorySequencePlusPlayer
+                    key={viewKey}
+                    roomCode={roomCode}
+                    playerName={playerName}
+                    sequence={memorySequencePlusConfig.sequence}
+                    gridSize={memorySequencePlusConfig.gridSize}
+                    maxRounds={memorySequencePlusConfig.maxRounds}
+                />
+            </>
         );
     }
 
     if (gameType === "pipeconnect" && phase === "playing" && pipeConnectTiles) {
         return (
-            <PipeConnectPlayer
-                key={viewKey}
-                roomCode={roomCode}
-                playerName={playerName}
-                initialTiles={pipeConnectTiles}
-            />
+            <>
+                {notice && (
+                    <ConnectionNotice
+                        floating
+                        tone={notice.tone}
+                        title={notice.title}
+                        message={notice.message}
+                        actionLabel="Retry now"
+                        onAction={retryConnection}
+                        onDismiss={dismissNotice}
+                    />
+                )}
+                <PipeConnectPlayer
+                    key={viewKey}
+                    roomCode={roomCode}
+                    playerName={playerName}
+                    initialTiles={pipeConnectTiles}
+                />
+            </>
         );
     }
 
     // ── Rush Hour: hand off to dedicated view ────────────────────────────────
     if (gameType === "rushhour" && phase === "playing" && rushHourVehicles) {
         return (
-            <RushHourPlayer
-                key={viewKey}
-                roomCode={roomCode}
-                playerName={playerName}
-                initialVehicles={rushHourVehicles}
-            />
+            <>
+                {notice && (
+                    <ConnectionNotice
+                        floating
+                        tone={notice.tone}
+                        title={notice.title}
+                        message={notice.message}
+                        actionLabel="Retry now"
+                        onAction={retryConnection}
+                        onDismiss={dismissNotice}
+                    />
+                )}
+                <RushHourPlayer
+                    key={viewKey}
+                    roomCode={roomCode}
+                    playerName={playerName}
+                    initialVehicles={rushHourVehicles}
+                />
+            </>
         );
     }
 
@@ -500,6 +633,16 @@ export function Player({ roomCode, playerName }: Props) {
             </header>
 
             <div className={styles.content}>
+                {notice && (
+                    <ConnectionNotice
+                        tone={notice.tone}
+                        title={notice.title}
+                        message={notice.message}
+                        actionLabel="Retry now"
+                        onAction={retryConnection}
+                        onDismiss={dismissNotice}
+                    />
+                )}
                 {phase === "waiting" && (
                     <div className={styles.centered}>
                         <div className={styles.waitCard}>
