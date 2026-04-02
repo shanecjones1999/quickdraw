@@ -19,6 +19,7 @@ import type {
     BowmanResult,
     CodebreakerResult,
     CodebreakerConfig,
+    GameOverPayload,
     LightsOutResult,
     MatchStanding,
     MemorySequencePlusConfig,
@@ -160,6 +161,12 @@ export function Player({
     const [shuffleState, setShuffleState] = useState<ShuffleState | null>(null);
     const [shuffleReadyState, setShuffleReadyState] =
         useState<ShuffleReadyState | null>(null);
+    const [resultsAutoAdvanceAt, setResultsAutoAdvanceAt] = useState<
+        number | null
+    >(null);
+    const [resultsCountdownNow, setResultsCountdownNow] = useState(() =>
+        Date.now(),
+    );
     const elapsed = useTimer(startTime);
     const cellSize = useCellSize();
     const { notice, dismissNotice, retryConnection } = useConnectionNotice({
@@ -171,6 +178,29 @@ export function Player({
     const recentWinnerName = getTopName(results);
     const leaderName =
         standings.find((standing) => standing.position === 1)?.name ?? null;
+    const resultsCountdownSeconds =
+        resultsAutoAdvanceAt === null
+            ? null
+            : Math.max(
+                  0,
+                  Math.ceil(
+                      (resultsAutoAdvanceAt - resultsCountdownNow) / 1000,
+                  ),
+              );
+
+    useEffect(() => {
+        if (phase !== "results" || resultsAutoAdvanceAt === null || matchOver) {
+            return;
+        }
+
+        const intervalId = setInterval(() => {
+            setResultsCountdownNow(Date.now());
+        }, 250);
+
+        return () => {
+            clearInterval(intervalId);
+        };
+    }, [matchOver, phase, resultsAutoAdvanceAt]);
 
     useEffect(() => {
         if (!resumeSession) return;
@@ -263,6 +293,7 @@ export function Player({
             totalRounds: number;
         }) => {
             setShuffleState(null);
+            setResultsAutoAdvanceAt(null);
             setGameType(gt);
             setCurrentRound(roundNumber);
             setTotalRounds(nextTotalRounds);
@@ -333,6 +364,7 @@ export function Player({
             setMatchOver(false);
             setStartTime(null);
             setPhase("shuffling");
+            setResultsAutoAdvanceAt(null);
             setShuffleState({
                 gameType: gt,
                 roundNumber,
@@ -410,14 +442,8 @@ export function Player({
             totalRounds: nextTotalRounds,
             matchOver: isMatchOver,
             standings: nextStandings,
-        }: {
-            results: RoundResult[];
-            gameType: GameType;
-            roundNumber: number;
-            totalRounds: number;
-            matchOver: boolean;
-            standings: MatchStanding[];
-        }) => {
+            autoAdvanceAt,
+        }: GameOverPayload<RoundResult[]>) => {
             setShuffleState(null);
             setGameType(gt);
             setResults(roundResults);
@@ -425,6 +451,8 @@ export function Player({
             setTotalRounds(nextTotalRounds);
             setMatchOver(isMatchOver);
             setStandings(nextStandings);
+            setResultsAutoAdvanceAt(autoAdvanceAt);
+            setResultsCountdownNow(Date.now());
             setStartTime(null);
             setPhase("results");
         },
@@ -435,6 +463,7 @@ export function Player({
         setPhase("waiting");
         setCurrentRound(0);
         setMatchOver(false);
+        setResultsAutoAdvanceAt(null);
         setShuffleState(null);
         setStandings([]);
         setCodebreakerConfig(null);
@@ -827,6 +856,11 @@ export function Player({
                         <div className={styles.waitSub}>
                             {currentRound}/{totalRounds} rounds played
                         </div>
+                        {!matchOver && resultsCountdownSeconds !== null && (
+                            <div className={styles.resultsCountdown}>
+                                Next round starts in {resultsCountdownSeconds}s
+                            </div>
+                        )}
                         <div className={styles.resultsList}>
                             {results.map((r, i) => (
                                 <div
@@ -875,7 +909,9 @@ export function Player({
                         <div className={styles.waitSub}>
                             {matchOver
                                 ? "Waiting for host to reset the room…"
-                                : "Waiting for host to start the next round…"}
+                                : resultsCountdownSeconds !== null
+                                  ? `Auto-transitioning in ${resultsCountdownSeconds}s…`
+                                  : "Waiting for host to start the next round…"}
                         </div>
                     </div>
                 )}

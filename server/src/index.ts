@@ -54,6 +54,7 @@ const MIN_MATCH_ROUNDS = 1;
 const MAX_MATCH_ROUNDS = 12;
 const ROUND_SHUFFLE_DURATION_MS = 4800;
 const ROUND_SHUFFLE_LANDING_BUFFER_MS = 850;
+const RESULTS_AUTO_ADVANCE_MS = 6000;
 const ROUND_READY_TARGET = 1;
 const PLAYER_RECONNECT_GRACE_MS = 30000;
 
@@ -457,6 +458,7 @@ function emitPlayerResumeState(
             totalRounds: room.totalRounds,
             matchOver: room.currentRound >= room.totalRounds,
             standings: buildStandings(room, lastRoundPoints),
+            autoAdvanceAt: room.resultsAutoAdvanceAt,
         });
         return;
     }
@@ -684,6 +686,15 @@ function clearPendingRoundStart(room: Room) {
     }
 }
 
+function clearPendingResultsAdvance(room: Room) {
+    if (room.resultsAutoAdvanceTimeout) {
+        clearTimeout(room.resultsAutoAdvanceTimeout);
+        room.resultsAutoAdvanceTimeout = null;
+    }
+
+    room.resultsAutoAdvanceAt = null;
+}
+
 function buildStandings(
     room: Room,
     lastRoundPoints: Map<string, number>,
@@ -711,6 +722,7 @@ function buildStandings(
 function startRound(room: Room, nextGameType?: GameType) {
     if (room.currentRound >= room.totalRounds) return;
 
+    clearPendingResultsAdvance(room);
     clearRoundState(room);
     room.phase = "playing";
     room.gameStartTime = Date.now();
@@ -837,6 +849,7 @@ function queueRoundStart(room: Room) {
     if (room.currentRound >= room.totalRounds) return;
 
     clearPendingRoundStart(room);
+    clearPendingResultsAdvance(room);
 
     const nextGameType = room.roundSequence[room.currentRound] ?? "klotski";
     const nextRoundNumber = room.currentRound + 1;
@@ -1499,6 +1512,7 @@ io.on("connection", (socket) => {
         if (room.phase !== "results") return;
         if (room.currentRound >= room.totalRounds) return;
 
+        clearPendingResultsAdvance(room);
         queueRoundStart(room);
     });
 
@@ -1508,6 +1522,7 @@ io.on("connection", (socket) => {
         if (!room || room.hostSocketId !== socket.id) return;
 
         clearPendingRoundStart(room);
+        clearPendingResultsAdvance(room);
         room.phase = "lobby";
         room.currentRound = 0;
         room.roundSequence = [];
@@ -1531,6 +1546,7 @@ io.on("connection", (socket) => {
 
         if (room.hostSocketId === socket.id) {
             clearPendingRoundStart(room);
+            clearPendingResultsAdvance(room);
             io.to(room.code).emit("error", { message: "Host disconnected." });
             deleteRoom(room.code);
         } else {
@@ -1565,6 +1581,7 @@ function endGame(roomCode: string) {
     const room = getRoom(roomCode);
     if (!room) return;
     if (room.phase !== "playing") return;
+    clearPendingResultsAdvance(room);
     room.phase = "results";
 
     const results = buildRoundResults(room);
@@ -1594,6 +1611,19 @@ function endGame(roomCode: string) {
     const standings = buildStandings(room, lastRoundPoints);
     const matchOver = room.currentRound >= room.totalRounds;
 
+    if (!matchOver) {
+        room.resultsAutoAdvanceAt = Date.now() + RESULTS_AUTO_ADVANCE_MS;
+        room.resultsAutoAdvanceTimeout = setTimeout(() => {
+            room.resultsAutoAdvanceTimeout = null;
+
+            if (getRoom(roomCode) !== room) return;
+            if (room.phase !== "results") return;
+            if (room.currentRound >= room.totalRounds) return;
+
+            queueRoundStart(room);
+        }, RESULTS_AUTO_ADVANCE_MS);
+    }
+
     io.to(roomCode).emit("game:over", {
         results,
         gameType: room.gameType,
@@ -1601,6 +1631,7 @@ function endGame(roomCode: string) {
         totalRounds: room.totalRounds,
         matchOver,
         standings,
+        autoAdvanceAt: room.resultsAutoAdvanceAt,
     });
     console.log(
         `[game:over] room ${roomCode} round ${room.currentRound}/${room.totalRounds} (${room.gameType})`,

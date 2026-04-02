@@ -67,6 +67,8 @@ export interface Room {
     roundReadyPlayerSessionIds: Set<string>;
     roundReadyOpensAt: number | null;
     roundRevealTimeout: ReturnType<typeof setTimeout> | null;
+    resultsAutoAdvanceAt: number | null;
+    resultsAutoAdvanceTimeout: ReturnType<typeof setTimeout> | null;
 }
 
 export interface MatchStanding {

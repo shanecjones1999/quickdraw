@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { ConnectionNotice } from "../components/ConnectionNotice";
 import { useConnectionNotice } from "../hooks/useConnectionNotice";
 import { socket } from "../socket";
@@ -25,6 +25,7 @@ import type {
     BowmanResult,
     CodebreakerProgressSnapshot,
     CodebreakerResult,
+    GameOverPayload,
     LightsOutProgressSnapshot,
     LightsOutResult,
     MemorySequencePlusProgressSnapshot,
@@ -132,6 +133,12 @@ export function Host({ roomCode }: Props) {
     const [shuffleState, setShuffleState] = useState<ShuffleState | null>(null);
     const [shuffleReadyState, setShuffleReadyState] =
         useState<ShuffleReadyState | null>(null);
+    const [resultsAutoAdvanceAt, setResultsAutoAdvanceAt] = useState<
+        number | null
+    >(null);
+    const [resultsCountdownNow, setResultsCountdownNow] = useState(() =>
+        Date.now(),
+    );
     const now = useTimer(gameStartTime);
     const { notice, dismissNotice, retryConnection } = useConnectionNotice({
         role: "host",
@@ -157,6 +164,29 @@ export function Host({ roomCode }: Props) {
                         : getTopName(results);
     const leaderName =
         standings.find((standing) => standing.position === 1)?.name ?? null;
+    const resultsCountdownSeconds =
+        resultsAutoAdvanceAt === null
+            ? null
+            : Math.max(
+                  0,
+                  Math.ceil(
+                      (resultsAutoAdvanceAt - resultsCountdownNow) / 1000,
+                  ),
+              );
+
+    useEffect(() => {
+        if (phase !== "results" || resultsAutoAdvanceAt === null || matchOver) {
+            return;
+        }
+
+        const intervalId = setInterval(() => {
+            setResultsCountdownNow(Date.now());
+        }, 250);
+
+        return () => {
+            clearInterval(intervalId);
+        };
+    }, [matchOver, phase, resultsAutoAdvanceAt]);
 
     const onRoomUpdated = useCallback(
         ({ players: p }: { players: PlayerInfo[] }) => {
@@ -190,6 +220,7 @@ export function Host({ roomCode }: Props) {
             totalRounds: number;
         }) => {
             setShuffleState(null);
+            setResultsAutoAdvanceAt(null);
             setGameTypeState(gt);
             setCurrentRound(roundNumber);
             setTotalRounds(nextTotalRounds);
@@ -223,6 +254,7 @@ export function Host({ roomCode }: Props) {
             setGameStartTime(null);
             setMatchOver(false);
             setPhase("shuffling");
+            setResultsAutoAdvanceAt(null);
             setShuffleState({
                 gameType: gt,
                 roundNumber,
@@ -315,14 +347,8 @@ export function Host({ roomCode }: Props) {
             totalRounds: nextTotalRounds,
             matchOver: isMatchOver,
             standings: nextStandings,
-        }: {
-            results: never;
-            gameType: GameType;
-            roundNumber: number;
-            totalRounds: number;
-            matchOver: boolean;
-            standings: MatchStanding[];
-        }) => {
+            autoAdvanceAt,
+        }: GameOverPayload<never>) => {
             setShuffleState(null);
             setPhase("results");
             setGameTypeState(gt);
@@ -330,6 +356,8 @@ export function Host({ roomCode }: Props) {
             setTotalRounds(nextTotalRounds);
             setMatchOver(isMatchOver);
             setStandings(nextStandings);
+            setResultsAutoAdvanceAt(autoAdvanceAt);
+            setResultsCountdownNow(Date.now());
             if (gt === "bowman") setBowmanResults(r);
             else if (gt === "codebreaker") setCodebreakerResults(r);
             else if (gt === "lightsout") setLightsOutResults(r);
@@ -348,6 +376,7 @@ export function Host({ roomCode }: Props) {
         setPhase("lobby");
         setCurrentRound(0);
         setMatchOver(false);
+        setResultsAutoAdvanceAt(null);
         setShuffleState(null);
         setShuffleReadyState(null);
         setStandings([]);
@@ -676,6 +705,12 @@ export function Host({ roomCode }: Props) {
                             {formatGameLabel(gameType)} · {currentRound}/
                             {totalRounds} rounds
                         </div>
+                        {!matchOver && resultsCountdownSeconds !== null && (
+                            <div className={styles.resultsCountdown}>
+                                Auto starting Round {currentRound + 1} in{" "}
+                                {resultsCountdownSeconds}s
+                            </div>
+                        )}
 
                         {gameType === "bowman" ? (
                             <div className={styles.bowmanResults}>
@@ -935,7 +970,7 @@ export function Host({ roomCode }: Props) {
                         >
                             {matchOver
                                 ? "Play Again"
-                                : `Start Round ${currentRound + 1}`}
+                                : `Start Round ${currentRound + 1} Now`}
                         </button>
                     </div>
                 )}

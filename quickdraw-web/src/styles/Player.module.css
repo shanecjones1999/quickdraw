@@ -88,6 +88,19 @@
   font-size: 0.95rem;
 }
 
+.resultsCountdown {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.45rem 0.8rem;
+  border-radius: 999px;
+  background: rgba(255,215,0,0.14);
+  border: 1px solid rgba(255,215,0,0.28);
+  color: #ffd700;
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+
 .joinDetails {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

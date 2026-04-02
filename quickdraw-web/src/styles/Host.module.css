@@ -377,6 +377,16 @@
   font-size: 1rem;
 }
 
+.resultsCountdown {
+  padding: 0.55rem 0.95rem;
+  border-radius: 999px;
+  background: rgba(255,215,0,0.12);
+  border: 1px solid rgba(255,215,0,0.22);
+  color: #ffd700;
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
 .resetBtn {
   background: rgba(255,255,255,0.1);
   color: #fff;

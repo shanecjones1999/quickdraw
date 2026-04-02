@@ -30,6 +30,16 @@ export interface MatchStanding {
     lastRoundPoints: number;
 }
 
+export interface GameOverPayload<T = unknown> {
+    results: T;
+    gameType: GameType;
+    roundNumber: number;
+    totalRounds: number;
+    matchOver: boolean;
+    standings: MatchStanding[];
+    autoAdvanceAt: number | null;
+}
+
 export interface RoundShufflePayload {
     gameType: GameType;
     roundNumber: number;
