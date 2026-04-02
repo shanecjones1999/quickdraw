@@ -66,10 +66,75 @@
   padding-top: 2rem;
 }
 
+.lobbyHero {
+  width: min(100%, 820px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.8rem;
+  padding: 1.75rem 1.5rem;
+  border-radius: 1.25rem;
+  background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.03));
+  border: 1px solid rgba(255,255,255,0.12);
+  box-shadow: 0 18px 42px rgba(0,0,0,0.18);
+}
+
+.lobbyEyebrow {
+  color: rgba(255,255,255,0.55);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
 .lobbyTitle {
   font-family: 'Russo One', sans-serif;
-  font-size: 1.8rem;
-  color: rgba(255,255,255,0.7);
+  font-size: clamp(1.8rem, 3vw, 2.5rem);
+  color: #fff;
+  text-align: center;
+}
+
+.statusRow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.playerCountBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.5rem 0.9rem;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.14);
+  color: #fff;
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.readinessBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.5rem 0.9rem;
+  border-radius: 999px;
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.readinessBadge.ready {
+  background: rgba(46,204,113,0.14);
+  border: 1px solid rgba(46,204,113,0.32);
+  color: #7ff0aa;
+}
+
+.readinessBadge.waiting {
+  background: rgba(255,215,0,0.12);
+  border: 1px solid rgba(255,215,0,0.28);
+  color: #ffd700;
 }
 
 .playerList {
@@ -86,23 +151,61 @@
   border-radius: 2rem;
   padding: 0.5rem 1.25rem;
   font-size: 1rem;
+  color: #fff;
 }
 
 .roomCodeBig {
   font-family: 'Russo One', sans-serif;
-  font-size: 3rem;
+  font-size: clamp(3rem, 9vw, 5rem);
   letter-spacing: 0.4em;
   color: #fff;
+  line-height: 1;
+  text-indent: 0.4em;
 }
 
 .lobbyHint {
-  color: rgba(255,255,255,0.4);
-  font-size: 0.9rem;
+  color: rgba(255,255,255,0.68);
+  font-size: 1rem;
+  text-align: center;
 }
 
 .noPlayers {
-  color: rgba(255,255,255,0.3);
+  color: rgba(255,255,255,0.45);
   font-size: 1rem;
+  text-align: center;
+  padding: 1rem 1.25rem;
+  border-radius: 1rem;
+  background: rgba(255,255,255,0.04);
+  border: 1px dashed rgba(255,255,255,0.12);
+}
+
+.readinessPanel {
+  width: min(100%, 720px);
+  padding: 1rem 1.25rem;
+  border-radius: 1rem;
+  text-align: center;
+  border: 1px solid rgba(255,255,255,0.12);
+}
+
+.readinessPanelWaiting {
+  background: rgba(255,215,0,0.08);
+}
+
+.readinessPanelReady {
+  background: rgba(46,204,113,0.08);
+}
+
+.readinessTitle {
+  color: #fff;
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+
+.readinessText {
+  margin-top: 0.45rem;
+  color: rgba(255,255,255,0.72);
+  font-size: 0.95rem;
+  line-height: 1.45;
 }
 
 .configCard {
@@ -165,7 +268,43 @@
 
 .startBtn:hover { opacity: 0.9; }
 .startBtn:active { transform: scale(0.96); }
-.startBtn:disabled { opacity: 0.4; cursor: not-allowed; }
+.startBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  background: rgba(255,255,255,0.14);
+  color: rgba(255,255,255,0.6);
+}
+
+@media (max-width: 720px) {
+  .content {
+    padding: 1.25rem;
+  }
+
+  .roomCodeBig {
+    letter-spacing: 0.28em;
+    text-indent: 0.28em;
+  }
+}
+
+@media (max-width: 520px) {
+  .lobby {
+    gap: 1.25rem;
+    padding-top: 0.5rem;
+  }
+
+  .lobbyHero {
+    padding: 1.25rem 1rem;
+  }
+
+  .configRow {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .roundInput {
+    width: 100%;
+  }
+}
 
 /* Playing */
 .timerRow {

@@ -47,6 +47,7 @@ const MEDALS = ["🥇", "🥈", "🥉"];
 const DEFAULT_TOTAL_ROUNDS = 5;
 const MIN_TOTAL_ROUNDS = 1;
 const MAX_TOTAL_ROUNDS = 12;
+const MIN_PLAYERS_TO_START = 1;
 
 interface ShuffleState {
     gameType: GameType;
@@ -111,6 +112,9 @@ export function Host({ roomCode }: Props) {
     const [gameStartTime, setGameStartTime] = useState<number | null>(null);
     const [shuffleState, setShuffleState] = useState<ShuffleState | null>(null);
     const now = useTimer(gameStartTime);
+    const playerCount = players.length;
+    const canStart = playerCount >= MIN_PLAYERS_TO_START;
+    const playersNeeded = Math.max(MIN_PLAYERS_TO_START - playerCount, 0);
 
     const onRoomUpdated = useCallback(
         ({ players: p }: { players: PlayerInfo[] }) => {
@@ -363,12 +367,52 @@ export function Host({ roomCode }: Props) {
                 {/* ── Lobby ───────────────────────────────────────── */}
                 {phase === "lobby" && (
                     <div className={styles.lobby}>
-                        <div className={styles.lobbyTitle}>
-                            Waiting for players…
+                        <div className={styles.lobbyHero}>
+                            <div className={styles.lobbyEyebrow}>
+                                Shared screen lobby
+                            </div>
+                            <div className={styles.lobbyTitle}>
+                                {canStart
+                                    ? "Room is ready to start"
+                                    : playerCount === 0
+                                      ? "Waiting for players"
+                                      : "Almost ready"}
+                            </div>
+                            <div className={styles.roomCodeBig}>{roomCode}</div>
+                            <div className={styles.lobbyHint}>
+                                Players join on their phones with this 4-letter
+                                code.
+                            </div>
+                            <div className={styles.statusRow}>
+                                <div className={styles.playerCountBadge}>
+                                    {playerCount} player
+                                    {playerCount === 1 ? "" : "s"} joined
+                                </div>
+                                <div
+                                    className={`${styles.readinessBadge} ${canStart ? styles.ready : styles.waiting}`}
+                                >
+                                    {canStart
+                                        ? "Ready to start"
+                                        : `${playersNeeded} more ${playersNeeded === 1 ? "player" : "players"} needed`}
+                                </div>
+                            </div>
                         </div>
-                        <div className={styles.roomCodeBig}>{roomCode}</div>
-                        <div className={styles.lobbyHint}>
-                            Players go to this URL and enter the code
+
+                        <div
+                            className={`${styles.readinessPanel} ${canStart ? styles.readinessPanelReady : styles.readinessPanelWaiting}`}
+                        >
+                            <div className={styles.readinessTitle}>
+                                {canStart
+                                    ? "Everyone’s in — kick off the match when ready."
+                                    : playerCount === 0
+                                      ? "No players yet — keep the room code visible so phones can join."
+                                      : "A few more players and you’re good to go."}
+                            </div>
+                            <div className={styles.readinessText}>
+                                {canStart
+                                    ? `Starting now will deal ${totalRounds} random mini-games across the match.`
+                                    : `Need at least ${MIN_PLAYERS_TO_START} ${MIN_PLAYERS_TO_START === 1 ? "player" : "players"} to start. Current lobby: ${playerCount}.`}
+                            </div>
                         </div>
 
                         <div className={styles.configCard}>
@@ -402,9 +446,10 @@ export function Host({ roomCode }: Props) {
                         </div>
 
                         <div className={styles.playerList}>
-                            {players.length === 0 ? (
+                            {playerCount === 0 ? (
                                 <div className={styles.noPlayers}>
-                                    No players yet
+                                    No players yet — waiting for the first phone
+                                    to join.
                                 </div>
                             ) : (
                                 players.map((p) => (
@@ -422,9 +467,11 @@ export function Host({ roomCode }: Props) {
                             type="button"
                             className={styles.startBtn}
                             onClick={startGame}
-                            disabled={players.length === 0}
+                            disabled={!canStart}
                         >
-                            Start Game →
+                            {canStart
+                                ? "Start Game →"
+                                : `Need ${MIN_PLAYERS_TO_START} ${MIN_PLAYERS_TO_START === 1 ? "Player" : "Players"}`}
                         </button>
                     </div>
                 )}
