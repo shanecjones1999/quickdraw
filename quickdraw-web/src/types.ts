@@ -21,6 +21,15 @@ export interface PlayerInfo {
     rank: number | null;
 }
 
+export interface MatchStanding {
+    id: string;
+    name: string;
+    position: number;
+    totalPoints: number;
+    roundsWon: number;
+    lastRoundPoints: number;
+}
+
 export interface ProgressSnapshot {
     playerId: string;
     board: (string | null)[][];

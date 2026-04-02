@@ -36,6 +36,22 @@ import {
     submitSimonCopyRound,
 } from "./simoncopy.js";
 import type { GameType } from "./types.js";
+import type { MatchStanding, Room } from "./types.js";
+
+const AVAILABLE_GAME_TYPES: GameType[] = [
+    "klotski",
+    "bowman",
+    "codebreaker",
+    "pipeconnect",
+    "simoncopy",
+    "memorysequenceplus",
+    "rushhour",
+    "lightsout",
+];
+
+const DEFAULT_MATCH_ROUNDS = 5;
+const MIN_MATCH_ROUNDS = 1;
+const MAX_MATCH_ROUNDS = 12;
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const useLocalHttps = process.env.LOCAL_HTTPS === "true";
@@ -80,6 +96,218 @@ const io = new Server(httpServer, {
     cors: { origin: "*" },
 });
 
+function sanitizeTotalRounds(value: number | undefined): number {
+    if (!Number.isFinite(value)) return DEFAULT_MATCH_ROUNDS;
+    return Math.min(
+        MAX_MATCH_ROUNDS,
+        Math.max(MIN_MATCH_ROUNDS, Math.round(value ?? DEFAULT_MATCH_ROUNDS)),
+    );
+}
+
+function shuffleGameTypes(): GameType[] {
+    const pool = [...AVAILABLE_GAME_TYPES];
+    for (let index = pool.length - 1; index > 0; index -= 1) {
+        const swapIndex = Math.floor(Math.random() * (index + 1));
+        [pool[index], pool[swapIndex]] = [pool[swapIndex], pool[index]];
+    }
+    return pool;
+}
+
+function createRoundSequence(totalRounds: number): GameType[] {
+    const sequence: GameType[] = [];
+
+    while (sequence.length < totalRounds) {
+        let bag = shuffleGameTypes();
+
+        if (sequence.length > 0) {
+            let attempts = 0;
+            while (bag[0] === sequence.at(-1) && attempts < 5) {
+                bag = shuffleGameTypes();
+                attempts += 1;
+            }
+        }
+
+        for (const gameType of bag) {
+            if (sequence.length >= totalRounds) break;
+            if (sequence.at(-1) === gameType) continue;
+            sequence.push(gameType);
+        }
+    }
+
+    return sequence;
+}
+
+function emitRoomSettings(room: Room) {
+    io.to(room.code).emit("room:settings", {
+        totalRounds: room.totalRounds,
+        currentRound: room.currentRound,
+    });
+}
+
+function clearRoundState(room: Room) {
+    room.gameStartTime = null;
+    room.finishOrder = [];
+    for (const player of room.players.values()) {
+        player.puzzleState = null;
+        player.bowmanState = null;
+        player.rushHourState = null;
+        player.lightsOutState = null;
+        player.codebreakerState = null;
+        player.pipeConnectState = null;
+        player.simonCopyState = null;
+        player.memorySequencePlusState = null;
+        player.rank = null;
+    }
+}
+
+function buildStandings(
+    room: Room,
+    lastRoundPoints: Map<string, number>,
+): MatchStanding[] {
+    const sortedPlayers = [...room.players.values()].sort((left, right) => {
+        if (right.matchPoints !== left.matchPoints) {
+            return right.matchPoints - left.matchPoints;
+        }
+        if (right.roundsWon !== left.roundsWon) {
+            return right.roundsWon - left.roundsWon;
+        }
+        return left.name.localeCompare(right.name);
+    });
+
+    return sortedPlayers.map((player, index) => ({
+        id: player.id,
+        name: player.name,
+        position: index + 1,
+        totalPoints: player.matchPoints,
+        roundsWon: player.roundsWon,
+        lastRoundPoints: lastRoundPoints.get(player.id) ?? 0,
+    }));
+}
+
+function startRound(room: Room) {
+    if (room.currentRound >= room.totalRounds) return;
+
+    clearRoundState(room);
+    room.phase = "playing";
+    room.gameStartTime = Date.now();
+    room.gameType = room.roundSequence[room.currentRound] ?? "klotski";
+    room.currentRound += 1;
+
+    if (room.gameType === "klotski") {
+        for (const player of room.players.values()) {
+            player.puzzleState = createInitialState();
+        }
+        const initialState = createInitialState();
+        io.to(room.code).emit("game:started", {
+            gameType: "klotski",
+            board: initialState.board,
+            pieces: initialState.pieces,
+            roundNumber: room.currentRound,
+            totalRounds: room.totalRounds,
+        });
+    } else if (room.gameType === "bowman") {
+        const sharedWind = 0;
+        for (const player of room.players.values()) {
+            player.bowmanState = createBowmanState(sharedWind);
+        }
+        io.to(room.code).emit("game:started", {
+            gameType: "bowman",
+            wind: sharedWind,
+            roundNumber: room.currentRound,
+            totalRounds: room.totalRounds,
+        });
+    } else if (room.gameType === "rushhour") {
+        const puzzleIndex = Math.floor(Math.random() * 3);
+        for (const player of room.players.values()) {
+            player.rushHourState = createRushHourState(puzzleIndex);
+        }
+        const sample = createRushHourState(puzzleIndex);
+        io.to(room.code).emit("game:started", {
+            gameType: "rushhour",
+            vehicles: sample.vehicles,
+            puzzleIndex,
+            roundNumber: room.currentRound,
+            totalRounds: room.totalRounds,
+        });
+    } else if (room.gameType === "lightsout") {
+        const initialState = createLightsOutState();
+        for (const player of room.players.values()) {
+            player.lightsOutState = createLightsOutState(initialState.board);
+        }
+        io.to(room.code).emit("game:started", {
+            gameType: "lightsout",
+            board: initialState.board,
+            roundNumber: room.currentRound,
+            totalRounds: room.totalRounds,
+        });
+    } else if (room.gameType === "codebreaker") {
+        const initialState = createCodebreakerState();
+        for (const player of room.players.values()) {
+            player.codebreakerState = createCodebreakerState(
+                initialState.secret,
+            );
+        }
+        io.to(room.code).emit("game:started", {
+            gameType: "codebreaker",
+            palette: [...CODEBREAKER_PALETTE],
+            codeLength: CODEBREAKER_CODE_LENGTH,
+            maxGuesses: CODEBREAKER_MAX_GUESSES,
+            roundNumber: room.currentRound,
+            totalRounds: room.totalRounds,
+        });
+    } else if (room.gameType === "pipeconnect") {
+        const puzzleIndex = Math.floor(
+            Math.random() * PIPE_CONNECT_PUZZLE_COUNT(),
+        );
+        const initialState = createPipeConnectState(puzzleIndex);
+        for (const player of room.players.values()) {
+            player.pipeConnectState = createPipeConnectState(
+                initialState.puzzleIndex,
+                initialState.tiles,
+            );
+        }
+        io.to(room.code).emit("game:started", {
+            gameType: "pipeconnect",
+            tiles: toPublicPipeConnectTiles(initialState.tiles),
+            roundNumber: room.currentRound,
+            totalRounds: room.totalRounds,
+        });
+    } else if (room.gameType === "simoncopy") {
+        const initialState = createSimonCopyState();
+        for (const player of room.players.values()) {
+            player.simonCopyState = createSimonCopyState(initialState.sequence);
+        }
+        io.to(room.code).emit("game:started", {
+            gameType: "simoncopy",
+            sequence: initialState.sequence,
+            maxRounds: SIMON_COPY_MAX_ROUNDS,
+            colors: [...SIMON_COPY_COLORS],
+            roundNumber: room.currentRound,
+            totalRounds: room.totalRounds,
+        });
+    } else if (room.gameType === "memorysequenceplus") {
+        const initialState = createMemorySequencePlusState();
+        for (const player of room.players.values()) {
+            player.memorySequencePlusState = createMemorySequencePlusState(
+                initialState.sequence,
+            );
+        }
+        io.to(room.code).emit("game:started", {
+            gameType: "memorysequenceplus",
+            sequence: initialState.sequence,
+            maxRounds: MEMORY_SEQUENCE_PLUS_MAX_ROUNDS,
+            gridSize: MEMORY_SEQUENCE_PLUS_GRID_SIZE,
+            roundNumber: room.currentRound,
+            totalRounds: room.totalRounds,
+        });
+    }
+
+    emitRoomSettings(room);
+    console.log(
+        `[host:start] room ${room.code} round ${room.currentRound}/${room.totalRounds} (${room.gameType})`,
+    );
+}
+
 // Serve the React build in production
 const buildPath = join(__dirname, "../../quickdraw-web/dist");
 app.use(express.static(buildPath));
@@ -95,8 +323,28 @@ io.on("connection", (socket) => {
         const room = createRoom(socket.id);
         socket.join(room.code);
         socket.emit("room:created", { roomCode: room.code });
+        socket.emit("room:settings", {
+            totalRounds: room.totalRounds,
+            currentRound: room.currentRound,
+        });
         console.log(`[host:create] room ${room.code}`);
     });
+
+    socket.on(
+        "host:setTotalRounds",
+        ({ totalRounds }: { totalRounds: number }) => {
+            const room = getRoomBySocket(socket.id);
+            if (!room || room.hostSocketId !== socket.id) return;
+            if (room.phase !== "lobby") return;
+
+            room.totalRounds = sanitizeTotalRounds(totalRounds);
+            room.roundSequence = [];
+            emitRoomSettings(room);
+            console.log(
+                `[host:setTotalRounds] room ${room.code} → ${room.totalRounds}`,
+            );
+        },
+    );
 
     // ── Host selects game type ───────────────────────────────────────
     socket.on("host:setGameType", ({ gameType }: { gameType: GameType }) => {
@@ -157,6 +405,8 @@ io.on("connection", (socket) => {
                 simonCopyState: null,
                 memorySequencePlusState: null,
                 rank: null,
+                matchPoints: 0,
+                roundsWon: 0,
             };
             room.players.set(socket.id, player);
             socket.join(code);
@@ -165,6 +415,10 @@ io.on("connection", (socket) => {
                 ({ id, name, rank }) => ({ id, name, rank }),
             );
             io.to(code).emit("room:updated", { players });
+            socket.emit("room:settings", {
+                totalRounds: room.totalRounds,
+                currentRound: room.currentRound,
+            });
             // Also tell the joining player the current game type
             socket.emit("room:gameType", { gameType: room.gameType });
             console.log(`[player:join] ${player.name} → ${code}`);
@@ -177,116 +431,15 @@ io.on("connection", (socket) => {
         if (!room || room.hostSocketId !== socket.id) return;
         if (room.phase !== "lobby") return;
 
-        room.phase = "playing";
-        room.gameStartTime = Date.now();
-        room.finishOrder = [];
-
-        if (room.gameType === "klotski") {
-            for (const player of room.players.values()) {
-                player.puzzleState = createInitialState();
-                player.rank = null;
-            }
-            const initialState = createInitialState();
-            io.to(room.code).emit("game:started", {
-                gameType: "klotski",
-                board: initialState.board,
-                pieces: initialState.pieces,
-            });
-        } else if (room.gameType === "bowman") {
-            const sharedWind = 0;
-            for (const player of room.players.values()) {
-                player.bowmanState = createBowmanState(sharedWind);
-                player.rank = null;
-            }
-            io.to(room.code).emit("game:started", {
-                gameType: "bowman",
-                wind: sharedWind,
-            });
-        } else if (room.gameType === "rushhour") {
-            const puzzleIndex = Math.floor(Math.random() * 3);
-            for (const player of room.players.values()) {
-                player.rushHourState = createRushHourState(puzzleIndex);
-                player.rank = null;
-            }
-            const sample = createRushHourState(puzzleIndex);
-            io.to(room.code).emit("game:started", {
-                gameType: "rushhour",
-                vehicles: sample.vehicles,
-                puzzleIndex,
-            });
-        } else if (room.gameType === "lightsout") {
-            const initialState = createLightsOutState();
-            for (const player of room.players.values()) {
-                player.lightsOutState = createLightsOutState(
-                    initialState.board,
-                );
-                player.rank = null;
-            }
-            io.to(room.code).emit("game:started", {
-                gameType: "lightsout",
-                board: initialState.board,
-            });
-        } else if (room.gameType === "codebreaker") {
-            const initialState = createCodebreakerState();
-            for (const player of room.players.values()) {
-                player.codebreakerState = createCodebreakerState(
-                    initialState.secret,
-                );
-                player.rank = null;
-            }
-            io.to(room.code).emit("game:started", {
-                gameType: "codebreaker",
-                palette: [...CODEBREAKER_PALETTE],
-                codeLength: CODEBREAKER_CODE_LENGTH,
-                maxGuesses: CODEBREAKER_MAX_GUESSES,
-            });
-        } else if (room.gameType === "pipeconnect") {
-            const puzzleIndex = Math.floor(
-                Math.random() * PIPE_CONNECT_PUZZLE_COUNT(),
-            );
-            const initialState = createPipeConnectState(puzzleIndex);
-            for (const player of room.players.values()) {
-                player.pipeConnectState = createPipeConnectState(
-                    initialState.puzzleIndex,
-                    initialState.tiles,
-                );
-                player.rank = null;
-            }
-            io.to(room.code).emit("game:started", {
-                gameType: "pipeconnect",
-                tiles: toPublicPipeConnectTiles(initialState.tiles),
-            });
-        } else if (room.gameType === "simoncopy") {
-            const initialState = createSimonCopyState();
-            for (const player of room.players.values()) {
-                player.simonCopyState = createSimonCopyState(
-                    initialState.sequence,
-                );
-                player.rank = null;
-            }
-            io.to(room.code).emit("game:started", {
-                gameType: "simoncopy",
-                sequence: initialState.sequence,
-                maxRounds: SIMON_COPY_MAX_ROUNDS,
-                colors: [...SIMON_COPY_COLORS],
-            });
-        } else if (room.gameType === "memorysequenceplus") {
-            const initialState = createMemorySequencePlusState();
-            for (const player of room.players.values()) {
-                player.memorySequencePlusState = createMemorySequencePlusState(
-                    initialState.sequence,
-                );
-                player.rank = null;
-            }
-            io.to(room.code).emit("game:started", {
-                gameType: "memorysequenceplus",
-                sequence: initialState.sequence,
-                maxRounds: MEMORY_SEQUENCE_PLUS_MAX_ROUNDS,
-                gridSize: MEMORY_SEQUENCE_PLUS_GRID_SIZE,
-            });
+        room.totalRounds = sanitizeTotalRounds(room.totalRounds);
+        room.currentRound = 0;
+        room.roundSequence = createRoundSequence(room.totalRounds);
+        for (const player of room.players.values()) {
+            player.matchPoints = 0;
+            player.roundsWon = 0;
         }
 
-        console.log(`[host:start] room ${room.code} (${room.gameType})`);
+        startRound(room);
     });
 
     // ── Player submits a Klotski move ───────────────────────────────
@@ -753,24 +906,28 @@ io.on("connection", (socket) => {
         endGame(room.code);
     });
 
+    socket.on("host:nextRound", () => {
+        const room = getRoomBySocket(socket.id);
+        if (!room || room.hostSocketId !== socket.id) return;
+        if (room.phase !== "results") return;
+        if (room.currentRound >= room.totalRounds) return;
+
+        startRound(room);
+    });
+
     // ── Host resets the room ────────────────────────────────────────
     socket.on("host:reset", () => {
         const room = getRoomBySocket(socket.id);
         if (!room || room.hostSocketId !== socket.id) return;
 
         room.phase = "lobby";
-        room.gameStartTime = null;
-        room.finishOrder = [];
+        room.currentRound = 0;
+        room.roundSequence = [];
+        clearRoundState(room);
+        emitRoomSettings(room);
         for (const player of room.players.values()) {
-            player.puzzleState = null;
-            player.bowmanState = null;
-            player.rushHourState = null;
-            player.lightsOutState = null;
-            player.codebreakerState = null;
-            player.pipeConnectState = null;
-            player.simonCopyState = null;
-            player.memorySequencePlusState = null;
-            player.rank = null;
+            player.matchPoints = 0;
+            player.roundsWon = 0;
         }
 
         io.to(room.code).emit("game:reset");
@@ -803,6 +960,7 @@ io.on("connection", (socket) => {
 function endGame(roomCode: string) {
     const room = getRoom(roomCode);
     if (!room) return;
+    if (room.phase !== "playing") return;
     room.phase = "results";
 
     let results: object[];
@@ -971,8 +1129,42 @@ function endGame(roomCode: string) {
             });
     }
 
-    io.to(roomCode).emit("game:over", { results, gameType: room.gameType });
-    console.log(`[game:over] room ${roomCode} (${room.gameType})`);
+    const lastRoundPoints = new Map<string, number>();
+    const playerCount = room.players.size;
+
+    for (const entry of results as Array<{
+        id: string;
+        rank?: number | null;
+    }>) {
+        const player = room.players.get(entry.id);
+        if (!player) continue;
+
+        const points =
+            entry.rank !== null && entry.rank !== undefined
+                ? Math.max(playerCount - entry.rank + 1, 1)
+                : 0;
+
+        player.matchPoints += points;
+        if (entry.rank === 1) {
+            player.roundsWon += 1;
+        }
+        lastRoundPoints.set(entry.id, points);
+    }
+
+    const standings = buildStandings(room, lastRoundPoints);
+    const matchOver = room.currentRound >= room.totalRounds;
+
+    io.to(roomCode).emit("game:over", {
+        results,
+        gameType: room.gameType,
+        roundNumber: room.currentRound,
+        totalRounds: room.totalRounds,
+        matchOver,
+        standings,
+    });
+    console.log(
+        `[game:over] room ${roomCode} round ${room.currentRound}/${room.totalRounds} (${room.gameType})`,
+    );
 }
 
 const PORT = process.env.PORT ?? 3001;

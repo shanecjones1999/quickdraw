@@ -12,11 +12,19 @@ import { PipeConnectPlayer } from "./PipeConnectPlayer";
 import { RushHourPlayer } from "./RushHourPlayer";
 import { SimonCopyPlayer } from "./SimonCopyPlayer";
 import type {
+    BowmanResult,
+    CodebreakerResult,
     CodebreakerConfig,
+    LightsOutResult,
+    MatchStanding,
     MemorySequencePlusConfig,
+    MemorySequencePlusResult,
     Piece,
+    PipeConnectResult,
     PipeConnectTile,
+    RushHourResult,
     SimonCopyConfig,
+    SimonCopyResult,
     Direction,
     Result,
     GameType,
@@ -25,6 +33,54 @@ import type {
 import styles from "../styles/Player.module.css";
 
 type Phase = "waiting" | "playing" | "solved" | "results";
+type RoundResult =
+    | Result
+    | BowmanResult
+    | CodebreakerResult
+    | LightsOutResult
+    | PipeConnectResult
+    | SimonCopyResult
+    | MemorySequencePlusResult
+    | RushHourResult;
+
+function describeRoundResult(result: RoundResult, gameType: GameType): string {
+    if (gameType === "bowman") {
+        return `${(result as BowmanResult).totalScore} pts`;
+    }
+    if (gameType === "codebreaker") {
+        const entry = result as CodebreakerResult;
+        return entry.solved
+            ? `${entry.attempts} guesses`
+            : `${entry.attempts} used`;
+    }
+    if (gameType === "lightsout") {
+        const entry = result as LightsOutResult;
+        return entry.moves !== null ? `${entry.moves} taps` : "DNF";
+    }
+    if (gameType === "pipeconnect") {
+        const entry = result as PipeConnectResult;
+        return entry.moves !== null ? `${entry.moves} turns` : "DNF";
+    }
+    if (gameType === "simoncopy") {
+        const entry = result as SimonCopyResult;
+        return entry.solved
+            ? `Round ${entry.roundReached}`
+            : `Out at ${entry.roundReached}`;
+    }
+    if (gameType === "memorysequenceplus") {
+        const entry = result as MemorySequencePlusResult;
+        return entry.solved
+            ? `Round ${entry.roundReached}`
+            : `Out at ${entry.roundReached}`;
+    }
+    if (gameType === "rushhour") {
+        const entry = result as RushHourResult;
+        return entry.moves !== null ? `${entry.moves} moves` : "DNF";
+    }
+
+    const entry = result as Result;
+    return entry.solveTime !== null ? formatTime(entry.solveTime) : "DNF";
+}
 
 interface Props {
     roomCode: string;
@@ -34,6 +90,11 @@ interface Props {
 export function Player({ roomCode, playerName }: Props) {
     const [gameType, setGameType] = useState<GameType>("klotski");
     const [phase, setPhase] = useState<Phase>("waiting");
+    const [totalRounds, setTotalRounds] = useState(5);
+    const [currentRound, setCurrentRound] = useState(0);
+    const [matchOver, setMatchOver] = useState(false);
+    const [standings, setStandings] = useState<MatchStanding[]>([]);
+    const [viewKey, setViewKey] = useState("waiting");
     const [bowmanWind, setBowmanWind] = useState(0);
     const [codebreakerConfig, setCodebreakerConfig] =
         useState<CodebreakerConfig | null>(null);
@@ -55,7 +116,7 @@ export function Player({ roomCode, playerName }: Props) {
     const [moves, setMoves] = useState(0);
     const [rank, setRank] = useState<number | null>(null);
     const [solveTime, setSolveTime] = useState<number | null>(null);
-    const [results, setResults] = useState<Result[]>([]);
+    const [results, setResults] = useState<RoundResult[]>([]);
     const [startTime, setStartTime] = useState<number | null>(null);
     const elapsed = useTimer(startTime);
     const cellSize = useCellSize();
@@ -64,6 +125,20 @@ export function Player({ roomCode, playerName }: Props) {
     const onRoomGameType = useCallback(
         ({ gameType: gt }: { gameType: GameType }) => {
             setGameType(gt);
+        },
+        [],
+    );
+
+    const onRoomSettings = useCallback(
+        ({
+            totalRounds: nextTotalRounds,
+            currentRound: nextCurrentRound,
+        }: {
+            totalRounds: number;
+            currentRound: number;
+        }) => {
+            setTotalRounds(nextTotalRounds);
+            setCurrentRound(nextCurrentRound);
         },
         [],
     );
@@ -83,6 +158,8 @@ export function Player({ roomCode, playerName }: Props) {
             colors,
             gridSize,
             maxRounds,
+            roundNumber,
+            totalRounds: nextTotalRounds,
         }: {
             gameType: GameType;
             board?: (string | null)[][] | boolean[][];
@@ -97,8 +174,16 @@ export function Player({ roomCode, playerName }: Props) {
             colors?: ("red" | "blue" | "green" | "yellow")[];
             gridSize?: number;
             maxRounds?: number;
+            roundNumber: number;
+            totalRounds: number;
         }) => {
             setGameType(gt);
+            setCurrentRound(roundNumber);
+            setTotalRounds(nextTotalRounds);
+            setMatchOver(false);
+            setStandings([]);
+            setResults([]);
+            setViewKey(`${roundNumber}-${gt}`);
             if (gt === "klotski") {
                 setPieces(p ?? null);
                 setMoves(0);
@@ -182,13 +267,39 @@ export function Player({ roomCode, playerName }: Props) {
         [],
     );
 
-    const onGameOver = useCallback(({ results: r }: { results: Result[] }) => {
-        setResults(r);
-        setPhase("results");
-    }, []);
+    const onMatchGameOver = useCallback(
+        ({
+            results: roundResults,
+            gameType: gt,
+            roundNumber,
+            totalRounds: nextTotalRounds,
+            matchOver: isMatchOver,
+            standings: nextStandings,
+        }: {
+            results: RoundResult[];
+            gameType: GameType;
+            roundNumber: number;
+            totalRounds: number;
+            matchOver: boolean;
+            standings: MatchStanding[];
+        }) => {
+            setGameType(gt);
+            setResults(roundResults);
+            setCurrentRound(roundNumber);
+            setTotalRounds(nextTotalRounds);
+            setMatchOver(isMatchOver);
+            setStandings(nextStandings);
+            setStartTime(null);
+            setPhase("results");
+        },
+        [],
+    );
 
     const onGameReset = useCallback(() => {
         setPhase("waiting");
+        setCurrentRound(0);
+        setMatchOver(false);
+        setStandings([]);
         setCodebreakerConfig(null);
         setSimonCopyConfig(null);
         setMemorySequencePlusConfig(null);
@@ -201,11 +312,12 @@ export function Player({ roomCode, playerName }: Props) {
         setResults([]);
     }, []);
 
+    useSocket("room:settings", onRoomSettings as never);
     useSocket("room:gameType", onRoomGameType as never);
     useSocket("game:started", onGameStarted as never);
     useSocket("state:update", onStateUpdate as never);
     useSocket("puzzle:solved", onPuzzleSolved as never);
-    useSocket("game:over", onGameOver as never);
+    useSocket("game:over", onMatchGameOver as never);
     useSocket("game:reset", onGameReset as never);
 
     function move(pieceId: string, direction: Direction) {
@@ -233,9 +345,10 @@ export function Player({ roomCode, playerName }: Props) {
     }, [phase, gameType, selectedPiece]);
 
     // ── Bowman: hand off to dedicated view ──────────────────────────────────
-    if (gameType === "bowman" && phase !== "waiting") {
+    if (gameType === "bowman" && phase !== "waiting" && phase !== "results") {
         return (
             <BowmanPlayer
+                key={viewKey}
                 roomCode={roomCode}
                 playerName={playerName}
                 initialWind={bowmanWind}
@@ -246,10 +359,12 @@ export function Player({ roomCode, playerName }: Props) {
     if (
         gameType === "codebreaker" &&
         phase !== "waiting" &&
+        phase !== "results" &&
         codebreakerConfig
     ) {
         return (
             <CodebreakerPlayer
+                key={viewKey}
                 roomCode={roomCode}
                 playerName={playerName}
                 palette={codebreakerConfig.palette}
@@ -259,9 +374,15 @@ export function Player({ roomCode, playerName }: Props) {
         );
     }
 
-    if (gameType === "lightsout" && phase !== "waiting" && lightsOutBoard) {
+    if (
+        gameType === "lightsout" &&
+        phase !== "waiting" &&
+        phase !== "results" &&
+        lightsOutBoard
+    ) {
         return (
             <LightsOutPlayer
+                key={viewKey}
                 roomCode={roomCode}
                 playerName={playerName}
                 initialBoard={lightsOutBoard}
@@ -269,9 +390,15 @@ export function Player({ roomCode, playerName }: Props) {
         );
     }
 
-    if (gameType === "simoncopy" && phase !== "waiting" && simonCopyConfig) {
+    if (
+        gameType === "simoncopy" &&
+        phase !== "waiting" &&
+        phase !== "results" &&
+        simonCopyConfig
+    ) {
         return (
             <SimonCopyPlayer
+                key={viewKey}
                 roomCode={roomCode}
                 playerName={playerName}
                 sequence={simonCopyConfig.sequence}
@@ -284,10 +411,12 @@ export function Player({ roomCode, playerName }: Props) {
     if (
         gameType === "memorysequenceplus" &&
         phase !== "waiting" &&
+        phase !== "results" &&
         memorySequencePlusConfig
     ) {
         return (
             <MemorySequencePlusPlayer
+                key={viewKey}
                 roomCode={roomCode}
                 playerName={playerName}
                 sequence={memorySequencePlusConfig.sequence}
@@ -297,9 +426,15 @@ export function Player({ roomCode, playerName }: Props) {
         );
     }
 
-    if (gameType === "pipeconnect" && phase !== "waiting" && pipeConnectTiles) {
+    if (
+        gameType === "pipeconnect" &&
+        phase !== "waiting" &&
+        phase !== "results" &&
+        pipeConnectTiles
+    ) {
         return (
             <PipeConnectPlayer
+                key={viewKey}
                 roomCode={roomCode}
                 playerName={playerName}
                 initialTiles={pipeConnectTiles}
@@ -308,9 +443,15 @@ export function Player({ roomCode, playerName }: Props) {
     }
 
     // ── Rush Hour: hand off to dedicated view ────────────────────────────────
-    if (gameType === "rushhour" && phase !== "waiting" && rushHourVehicles) {
+    if (
+        gameType === "rushhour" &&
+        phase !== "waiting" &&
+        phase !== "results" &&
+        rushHourVehicles
+    ) {
         return (
             <RushHourPlayer
+                key={viewKey}
                 roomCode={roomCode}
                 playerName={playerName}
                 initialVehicles={rushHourVehicles}
@@ -336,6 +477,9 @@ export function Player({ roomCode, playerName }: Props) {
                         <div className={styles.waitTitle}>You're in!</div>
                         <div className={styles.waitSub}>
                             Waiting for the host to start the game…
+                        </div>
+                        <div className={styles.hint}>
+                            Match length: {totalRounds} random rounds
                         </div>
                     </div>
                 )}
@@ -395,7 +539,14 @@ export function Player({ roomCode, playerName }: Props) {
 
                 {phase === "results" && (
                     <div className={styles.centered}>
-                        <div className={styles.waitTitle}>🏆 Game Over!</div>
+                        <div className={styles.waitTitle}>
+                            {matchOver
+                                ? "🏆 Match Complete!"
+                                : `✅ Round ${currentRound} Complete`}
+                        </div>
+                        <div className={styles.waitSub}>
+                            {currentRound}/{totalRounds} rounds played
+                        </div>
                         <div className={styles.resultsList}>
                             {results.map((r, i) => (
                                 <div
@@ -411,20 +562,40 @@ export function Player({ roomCode, playerName }: Props) {
                                         {r.name}
                                         {r.id === socket.id ? " (you)" : ""}
                                     </span>
-                                    {r.solveTime !== null ? (
-                                        <span className={styles.resultTime}>
-                                            {formatTime(r.solveTime)}
-                                        </span>
-                                    ) : (
-                                        <span className={styles.resultDnf}>
-                                            DNF
-                                        </span>
-                                    )}
+                                    <span className={styles.resultTime}>
+                                        {describeRoundResult(r, gameType)}
+                                    </span>
+                                </div>
+                            ))}
+                        </div>
+
+                        <div className={styles.resultsList}>
+                            {standings.map((standing) => (
+                                <div
+                                    key={standing.id}
+                                    className={`${styles.resultRow} ${standing.id === socket.id ? styles.highlight : ""}`}
+                                >
+                                    <span>
+                                        {standing.position <= 3
+                                            ? MEDALS[standing.position - 1]
+                                            : `#${standing.position}`}
+                                    </span>
+                                    <span className={styles.resultName}>
+                                        {standing.name}
+                                        {standing.id === socket.id
+                                            ? " (you)"
+                                            : ""}
+                                    </span>
+                                    <span className={styles.resultTime}>
+                                        {standing.totalPoints} pts
+                                    </span>
                                 </div>
                             ))}
                         </div>
                         <div className={styles.waitSub}>
-                            Waiting for host to start again…
+                            {matchOver
+                                ? "Waiting for host to reset the room…"
+                                : "Waiting for host to start the next round…"}
                         </div>
                     </div>
                 )}

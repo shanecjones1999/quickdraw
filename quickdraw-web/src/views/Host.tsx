@@ -16,6 +16,7 @@ import type {
     ProgressSnapshot,
     Result,
     GameType,
+    MatchStanding,
     BowmanProgressSnapshot,
     BowmanResult,
     CodebreakerProgressSnapshot,
@@ -40,11 +41,29 @@ interface Props {
 }
 
 const MEDALS = ["🥇", "🥈", "🥉"];
+const DEFAULT_TOTAL_ROUNDS = 5;
+const MIN_TOTAL_ROUNDS = 1;
+const MAX_TOTAL_ROUNDS = 12;
+
+function formatGameLabel(gameType: GameType): string {
+    if (gameType === "klotski") return "🧩 Klotski";
+    if (gameType === "bowman") return "🏹 Bowman";
+    if (gameType === "codebreaker") return "🔐 Codebreaker";
+    if (gameType === "pipeconnect") return "🪠 Pipe Connect";
+    if (gameType === "simoncopy") return "🟡 Simon Copy";
+    if (gameType === "memorysequenceplus") return "🧠 Memory Sequence+";
+    if (gameType === "rushhour") return "🚗 Rush Hour";
+    return "💡 Lights Out";
+}
 
 export function Host({ roomCode }: Props) {
     const [phase, setPhase] = useState<Phase>("lobby");
     const [players, setPlayers] = useState<PlayerInfo[]>([]);
     const [gameType, setGameTypeState] = useState<GameType>("klotski");
+    const [totalRounds, setTotalRounds] = useState(DEFAULT_TOTAL_ROUNDS);
+    const [currentRound, setCurrentRound] = useState(0);
+    const [matchOver, setMatchOver] = useState(false);
+    const [standings, setStandings] = useState<MatchStanding[]>([]);
     const [progress, setProgress] = useState<Map<string, ProgressSnapshot>>(
         new Map(),
     );
@@ -99,16 +118,34 @@ export function Host({ roomCode }: Props) {
         [],
     );
 
-    const onRoomGameType = useCallback(
-        ({ gameType: gt }: { gameType: GameType }) => {
-            setGameTypeState(gt);
+    const onRoomSettings = useCallback(
+        ({
+            totalRounds: nextTotalRounds,
+            currentRound: nextCurrentRound,
+        }: {
+            totalRounds: number;
+            currentRound: number;
+        }) => {
+            setTotalRounds(nextTotalRounds);
+            setCurrentRound(nextCurrentRound);
         },
         [],
     );
 
     const onGameStarted = useCallback(
-        ({ gameType: gt }: { gameType: GameType }) => {
+        ({
+            gameType: gt,
+            roundNumber,
+            totalRounds: nextTotalRounds,
+        }: {
+            gameType: GameType;
+            roundNumber: number;
+            totalRounds: number;
+        }) => {
             setGameTypeState(gt);
+            setCurrentRound(roundNumber);
+            setTotalRounds(nextTotalRounds);
+            setMatchOver(false);
             setPhase("playing");
             setProgress(new Map());
             setBowmanProg(new Map());
@@ -180,12 +217,24 @@ export function Host({ roomCode }: Props) {
         ({
             results: r,
             gameType: gt,
+            roundNumber,
+            totalRounds: nextTotalRounds,
+            matchOver: isMatchOver,
+            standings: nextStandings,
         }: {
             results: never;
             gameType: GameType;
+            roundNumber: number;
+            totalRounds: number;
+            matchOver: boolean;
+            standings: MatchStanding[];
         }) => {
             setPhase("results");
             setGameTypeState(gt);
+            setCurrentRound(roundNumber);
+            setTotalRounds(nextTotalRounds);
+            setMatchOver(isMatchOver);
+            setStandings(nextStandings);
             if (gt === "bowman") setBowmanResults(r);
             else if (gt === "codebreaker") setCodebreakerResults(r);
             else if (gt === "lightsout") setLightsOutResults(r);
@@ -202,6 +251,9 @@ export function Host({ roomCode }: Props) {
 
     const onGameReset = useCallback(() => {
         setPhase("lobby");
+        setCurrentRound(0);
+        setMatchOver(false);
+        setStandings([]);
         setProgress(new Map());
         setBowmanProg(new Map());
         setCodebreakerProg(new Map());
@@ -222,7 +274,7 @@ export function Host({ roomCode }: Props) {
     }, []);
 
     useSocket("room:updated", onRoomUpdated as never);
-    useSocket("room:gameType", onRoomGameType as never);
+    useSocket("room:settings", onRoomSettings as never);
     useSocket("game:started", onGameStarted as never);
     useSocket("player:progress", onPlayerProgress as never);
     useSocket("bowman:progress", onBowmanProgress as never);
@@ -238,13 +290,20 @@ export function Host({ roomCode }: Props) {
     useSocket("game:over", onGameOver as never);
     useSocket("game:reset", onGameReset as never);
 
-    function selectGameType(gt: GameType) {
-        setGameTypeState(gt);
-        socket.emit("host:setGameType", { gameType: gt });
+    function updateTotalRounds(value: number) {
+        const nextValue = Math.min(
+            MAX_TOTAL_ROUNDS,
+            Math.max(MIN_TOTAL_ROUNDS, Math.round(value)),
+        );
+        setTotalRounds(nextValue);
+        socket.emit("host:setTotalRounds", { totalRounds: nextValue });
     }
 
     function startGame() {
         socket.emit("host:start");
+    }
+    function nextRound() {
+        socket.emit("host:nextRound");
     }
     function endRound() {
         socket.emit("host:end");
@@ -262,6 +321,11 @@ export function Host({ roomCode }: Props) {
                     {phase === "playing" && (
                         <span className={styles.liveBadge}>🔴 LIVE</span>
                     )}
+                    {currentRound > 0 && (
+                        <span className={styles.roundBadge}>
+                            Round {currentRound}/{totalRounds}
+                        </span>
+                    )}
                 </div>
             </header>
 
@@ -277,47 +341,34 @@ export function Host({ roomCode }: Props) {
                             Players go to this URL and enter the code
                         </div>
 
-                        {/* Game type selector */}
-                        <div className={styles.gameSelector}>
-                            {(
-                                [
-                                    "klotski",
-                                    "bowman",
-                                    "codebreaker",
-                                    "pipeconnect",
-                                    "simoncopy",
-                                    "memorysequenceplus",
-                                    "rushhour",
-                                    "lightsout",
-                                ] as GameType[]
-                            ).map((gt) => (
-                                <button
-                                    key={gt}
-                                    type="button"
-                                    className={
-                                        gameType === gt
-                                            ? styles.gameSelected
-                                            : styles.gameOption
-                                    }
-                                    onClick={() => selectGameType(gt)}
+                        <div className={styles.configCard}>
+                            <div className={styles.configTitle}>
+                                Match Setup
+                            </div>
+                            <div className={styles.configRow}>
+                                <label
+                                    htmlFor="round-count"
+                                    className={styles.configLabel}
                                 >
-                                    {gt === "klotski"
-                                        ? "🧩 Klotski"
-                                        : gt === "bowman"
-                                          ? "🏹 Bowman"
-                                          : gt === "codebreaker"
-                                            ? "🔐 Codebreaker"
-                                            : gt === "pipeconnect"
-                                              ? "🪠 Pipe Connect"
-                                              : gt === "simoncopy"
-                                                ? "🟡 Simon Copy"
-                                                : gt === "memorysequenceplus"
-                                                  ? "🧠 Memory Sequence+"
-                                                  : gt === "rushhour"
-                                                    ? "🚗 Rush Hour"
-                                                    : "💡 Lights Out"}
-                                </button>
-                            ))}
+                                    Random rounds
+                                </label>
+                                <input
+                                    id="round-count"
+                                    type="number"
+                                    min={MIN_TOTAL_ROUNDS}
+                                    max={MAX_TOTAL_ROUNDS}
+                                    value={totalRounds}
+                                    className={styles.roundInput}
+                                    onChange={(event) =>
+                                        updateTotalRounds(
+                                            Number(event.target.value),
+                                        )
+                                    }
+                                />
+                            </div>
+                            <div className={styles.configHint}>
+                                Each match deals a random mini game every round.
+                            </div>
                         </div>
 
                         <div className={styles.playerList}>
@@ -352,6 +403,14 @@ export function Host({ roomCode }: Props) {
                 {phase === "playing" && (
                     <>
                         <div className={styles.timerRow}>
+                            <div>
+                                <div className={styles.roundHeading}>
+                                    Round {currentRound}/{totalRounds}
+                                </div>
+                                <div className={styles.roundGame}>
+                                    {formatGameLabel(gameType)}
+                                </div>
+                            </div>
                             <div className={styles.timer}>
                                 {formatTime(now)}
                             </div>
@@ -436,7 +495,15 @@ export function Host({ roomCode }: Props) {
                 {/* ── Results ─────────────────────────────────────── */}
                 {phase === "results" && (
                     <div className={styles.results}>
-                        <div className={styles.resultsTitle}>🏆 Results</div>
+                        <div className={styles.resultsTitle}>
+                            {matchOver
+                                ? "🏆 Final Standings"
+                                : `✅ Round ${currentRound} Complete`}
+                        </div>
+                        <div className={styles.resultsSubtitle}>
+                            {formatGameLabel(gameType)} · {currentRound}/
+                            {totalRounds} rounds
+                        </div>
 
                         {gameType === "bowman" ? (
                             <div className={styles.bowmanResults}>
@@ -656,12 +723,47 @@ export function Host({ roomCode }: Props) {
                             <ResultsBoard results={results} />
                         )}
 
+                        <div className={styles.standingsCard}>
+                            <div className={styles.standingsTitle}>
+                                {matchOver
+                                    ? "Overall leaderboard"
+                                    : "Match standings so far"}
+                            </div>
+                            <div className={styles.standingsList}>
+                                {standings.map((standing) => (
+                                    <div
+                                        key={standing.id}
+                                        className={styles.standingRow}
+                                    >
+                                        <span
+                                            className={styles.standingPosition}
+                                        >
+                                            {standing.position <= 3
+                                                ? MEDALS[standing.position - 1]
+                                                : `#${standing.position}`}
+                                        </span>
+                                        <span className={styles.standingName}>
+                                            {standing.name}
+                                        </span>
+                                        <span className={styles.standingDelta}>
+                                            +{standing.lastRoundPoints} pts
+                                        </span>
+                                        <span className={styles.standingScore}>
+                                            {standing.totalPoints} total
+                                        </span>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
                         <button
                             type="button"
                             className={styles.resetBtn}
-                            onClick={resetGame}
+                            onClick={matchOver ? resetGame : nextRound}
                         >
-                            Play Again
+                            {matchOver
+                                ? "Play Again"
+                                : `Start Round ${currentRound + 1}`}
                         </button>
                     </div>
                 )}

@@ -46,6 +46,8 @@ export interface Player {
     simonCopyState: SimonCopyState | null;
     memorySequencePlusState: MemorySequencePlusState | null;
     rank: number | null;
+    matchPoints: number;
+    roundsWon: number;
 }
 
 export interface Room {
@@ -54,8 +56,20 @@ export interface Room {
     players: Map<string, Player>;
     phase: "lobby" | "playing" | "results";
     gameType: GameType;
+    totalRounds: number;
+    currentRound: number;
+    roundSequence: GameType[];
     gameStartTime: number | null;
     finishOrder: string[];
+}
+
+export interface MatchStanding {
+    id: string;
+    name: string;
+    position: number;
+    totalPoints: number;
+    roundsWon: number;
+    lastRoundPoints: number;
 }
 
 export interface BowmanProgressSnapshot {
