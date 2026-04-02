@@ -2,6 +2,7 @@ import { useState, useCallback } from "react";
 import { socket } from "../socket";
 import { useSocket } from "../hooks/useSocket";
 import { useTimer, formatTime } from "../hooks/useTimer";
+import { formatGameLabel } from "../gameMeta";
 import { PlayerCard } from "../components/PlayerCard";
 import { BowmanPlayerCard } from "../components/BowmanPlayerCard";
 import { CodebreakerPlayerCard } from "../components/CodebreakerPlayerCard";
@@ -11,6 +12,7 @@ import { PipeConnectPlayerCard } from "../components/PipeConnectPlayerCard";
 import { RushHourPlayerCard } from "../components/RushHourPlayerCard";
 import { SimonCopyPlayerCard } from "../components/SimonCopyPlayerCard";
 import { ResultsBoard } from "../components/ResultsBoard";
+import { RoundShuffleOverlay } from "../components/RoundShuffleOverlay";
 import type {
     PlayerInfo,
     ProgressSnapshot,
@@ -27,6 +29,7 @@ import type {
     MemorySequencePlusResult,
     PipeConnectProgressSnapshot,
     PipeConnectResult,
+    RoundShufflePayload,
     RushHourProgressSnapshot,
     RushHourResult,
     SimonCopyProgressSnapshot,
@@ -34,7 +37,7 @@ import type {
 } from "../types";
 import styles from "../styles/Host.module.css";
 
-type Phase = "lobby" | "playing" | "results";
+type Phase = "lobby" | "shuffling" | "playing" | "results";
 
 interface Props {
     roomCode: string;
@@ -45,15 +48,12 @@ const DEFAULT_TOTAL_ROUNDS = 5;
 const MIN_TOTAL_ROUNDS = 1;
 const MAX_TOTAL_ROUNDS = 12;
 
-function formatGameLabel(gameType: GameType): string {
-    if (gameType === "klotski") return "🧩 Klotski";
-    if (gameType === "bowman") return "🏹 Bowman";
-    if (gameType === "codebreaker") return "🔐 Codebreaker";
-    if (gameType === "pipeconnect") return "🪠 Pipe Connect";
-    if (gameType === "simoncopy") return "🟡 Simon Copy";
-    if (gameType === "memorysequenceplus") return "🧠 Memory Sequence+";
-    if (gameType === "rushhour") return "🚗 Rush Hour";
-    return "💡 Lights Out";
+interface ShuffleState {
+    gameType: GameType;
+    roundNumber: number;
+    totalRounds: number;
+    durationMs: number;
+    landingBufferMs: number;
 }
 
 export function Host({ roomCode }: Props) {
@@ -109,6 +109,7 @@ export function Host({ roomCode }: Props) {
         [],
     );
     const [gameStartTime, setGameStartTime] = useState<number | null>(null);
+    const [shuffleState, setShuffleState] = useState<ShuffleState | null>(null);
     const now = useTimer(gameStartTime);
 
     const onRoomUpdated = useCallback(
@@ -142,6 +143,7 @@ export function Host({ roomCode }: Props) {
             roundNumber: number;
             totalRounds: number;
         }) => {
+            setShuffleState(null);
             setGameTypeState(gt);
             setCurrentRound(roundNumber);
             setTotalRounds(nextTotalRounds);
@@ -156,6 +158,31 @@ export function Host({ roomCode }: Props) {
             setMemorySequencePlusProg(new Map());
             setRushHourProg(new Map());
             setGameStartTime(Date.now());
+        },
+        [],
+    );
+
+    const onRoundShuffle = useCallback(
+        ({
+            gameType: gt,
+            roundNumber,
+            totalRounds: nextTotalRounds,
+            durationMs,
+            landingBufferMs,
+        }: RoundShufflePayload) => {
+            setGameTypeState(gt);
+            setCurrentRound(roundNumber);
+            setTotalRounds(nextTotalRounds);
+            setGameStartTime(null);
+            setMatchOver(false);
+            setPhase("shuffling");
+            setShuffleState({
+                gameType: gt,
+                roundNumber,
+                totalRounds: nextTotalRounds,
+                durationMs,
+                landingBufferMs,
+            });
         },
         [],
     );
@@ -229,6 +256,7 @@ export function Host({ roomCode }: Props) {
             matchOver: boolean;
             standings: MatchStanding[];
         }) => {
+            setShuffleState(null);
             setPhase("results");
             setGameTypeState(gt);
             setCurrentRound(roundNumber);
@@ -253,6 +281,7 @@ export function Host({ roomCode }: Props) {
         setPhase("lobby");
         setCurrentRound(0);
         setMatchOver(false);
+        setShuffleState(null);
         setStandings([]);
         setProgress(new Map());
         setBowmanProg(new Map());
@@ -275,6 +304,7 @@ export function Host({ roomCode }: Props) {
 
     useSocket("room:updated", onRoomUpdated as never);
     useSocket("room:settings", onRoomSettings as never);
+    useSocket("round:shuffle", onRoundShuffle as never);
     useSocket("game:started", onGameStarted as never);
     useSocket("player:progress", onPlayerProgress as never);
     useSocket("bowman:progress", onBowmanProgress as never);
@@ -490,6 +520,18 @@ export function Host({ roomCode }: Props) {
                             )}
                         </div>
                     </>
+                )}
+
+                {phase === "shuffling" && shuffleState && (
+                    <RoundShuffleOverlay
+                        gameType={shuffleState.gameType}
+                        roundNumber={shuffleState.roundNumber}
+                        totalRounds={shuffleState.totalRounds}
+                        durationMs={shuffleState.durationMs}
+                        landingBufferMs={shuffleState.landingBufferMs}
+                        title="Shuffling the next mini game"
+                        subtitle="The reel is spinning through every challenge and locking in this round’s pick."
+                    />
                 )}
 
                 {/* ── Results ─────────────────────────────────────── */}

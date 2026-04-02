@@ -3,7 +3,9 @@ import { socket } from "../socket";
 import { useSocket } from "../hooks/useSocket";
 import { useTimer, formatTime } from "../hooks/useTimer";
 import { useCellSize } from "../hooks/useCellSize";
+import { formatGameLabel } from "../gameMeta";
 import { KlotskiBoard } from "../components/KlotskiBoard";
+import { RoundShuffleOverlay } from "../components/RoundShuffleOverlay";
 import { BowmanPlayer } from "./BowmanPlayer";
 import { CodebreakerPlayer } from "./CodebreakerPlayer";
 import { LightsOutPlayer } from "./LightsOutPlayer";
@@ -28,11 +30,12 @@ import type {
     Direction,
     Result,
     GameType,
+    RoundShufflePayload,
     RushHourVehicle,
 } from "../types";
 import styles from "../styles/Player.module.css";
 
-type Phase = "waiting" | "playing" | "solved" | "results";
+type Phase = "waiting" | "shuffling" | "playing" | "solved" | "results";
 type RoundResult =
     | Result
     | BowmanResult
@@ -87,6 +90,14 @@ interface Props {
     playerName: string;
 }
 
+interface ShuffleState {
+    gameType: GameType;
+    roundNumber: number;
+    totalRounds: number;
+    durationMs: number;
+    landingBufferMs: number;
+}
+
 export function Player({ roomCode, playerName }: Props) {
     const [gameType, setGameType] = useState<GameType>("klotski");
     const [phase, setPhase] = useState<Phase>("waiting");
@@ -118,6 +129,7 @@ export function Player({ roomCode, playerName }: Props) {
     const [solveTime, setSolveTime] = useState<number | null>(null);
     const [results, setResults] = useState<RoundResult[]>([]);
     const [startTime, setStartTime] = useState<number | null>(null);
+    const [shuffleState, setShuffleState] = useState<ShuffleState | null>(null);
     const elapsed = useTimer(startTime);
     const cellSize = useCellSize();
 
@@ -177,6 +189,7 @@ export function Player({ roomCode, playerName }: Props) {
             roundNumber: number;
             totalRounds: number;
         }) => {
+            setShuffleState(null);
             setGameType(gt);
             setCurrentRound(roundNumber);
             setTotalRounds(nextTotalRounds);
@@ -232,6 +245,31 @@ export function Player({ roomCode, playerName }: Props) {
         [],
     );
 
+    const onRoundShuffle = useCallback(
+        ({
+            gameType: gt,
+            roundNumber,
+            totalRounds: nextTotalRounds,
+            durationMs,
+            landingBufferMs,
+        }: RoundShufflePayload) => {
+            setGameType(gt);
+            setCurrentRound(roundNumber);
+            setTotalRounds(nextTotalRounds);
+            setMatchOver(false);
+            setStartTime(null);
+            setPhase("shuffling");
+            setShuffleState({
+                gameType: gt,
+                roundNumber,
+                totalRounds: nextTotalRounds,
+                durationMs,
+                landingBufferMs,
+            });
+        },
+        [],
+    );
+
     const onStateUpdate = useCallback(
         ({
             pieces: p,
@@ -283,6 +321,7 @@ export function Player({ roomCode, playerName }: Props) {
             matchOver: boolean;
             standings: MatchStanding[];
         }) => {
+            setShuffleState(null);
             setGameType(gt);
             setResults(roundResults);
             setCurrentRound(roundNumber);
@@ -299,6 +338,7 @@ export function Player({ roomCode, playerName }: Props) {
         setPhase("waiting");
         setCurrentRound(0);
         setMatchOver(false);
+        setShuffleState(null);
         setStandings([]);
         setCodebreakerConfig(null);
         setSimonCopyConfig(null);
@@ -314,6 +354,7 @@ export function Player({ roomCode, playerName }: Props) {
 
     useSocket("room:settings", onRoomSettings as never);
     useSocket("room:gameType", onRoomGameType as never);
+    useSocket("round:shuffle", onRoundShuffle as never);
     useSocket("game:started", onGameStarted as never);
     useSocket("state:update", onStateUpdate as never);
     useSocket("puzzle:solved", onPuzzleSolved as never);
@@ -345,7 +386,7 @@ export function Player({ roomCode, playerName }: Props) {
     }, [phase, gameType, selectedPiece]);
 
     // ── Bowman: hand off to dedicated view ──────────────────────────────────
-    if (gameType === "bowman" && phase !== "waiting" && phase !== "results") {
+    if (gameType === "bowman" && phase === "playing") {
         return (
             <BowmanPlayer
                 key={viewKey}
@@ -358,8 +399,7 @@ export function Player({ roomCode, playerName }: Props) {
 
     if (
         gameType === "codebreaker" &&
-        phase !== "waiting" &&
-        phase !== "results" &&
+        phase === "playing" &&
         codebreakerConfig
     ) {
         return (
@@ -374,12 +414,7 @@ export function Player({ roomCode, playerName }: Props) {
         );
     }
 
-    if (
-        gameType === "lightsout" &&
-        phase !== "waiting" &&
-        phase !== "results" &&
-        lightsOutBoard
-    ) {
+    if (gameType === "lightsout" && phase === "playing" && lightsOutBoard) {
         return (
             <LightsOutPlayer
                 key={viewKey}
@@ -390,12 +425,7 @@ export function Player({ roomCode, playerName }: Props) {
         );
     }
 
-    if (
-        gameType === "simoncopy" &&
-        phase !== "waiting" &&
-        phase !== "results" &&
-        simonCopyConfig
-    ) {
+    if (gameType === "simoncopy" && phase === "playing" && simonCopyConfig) {
         return (
             <SimonCopyPlayer
                 key={viewKey}
@@ -410,8 +440,7 @@ export function Player({ roomCode, playerName }: Props) {
 
     if (
         gameType === "memorysequenceplus" &&
-        phase !== "waiting" &&
-        phase !== "results" &&
+        phase === "playing" &&
         memorySequencePlusConfig
     ) {
         return (
@@ -426,12 +455,7 @@ export function Player({ roomCode, playerName }: Props) {
         );
     }
 
-    if (
-        gameType === "pipeconnect" &&
-        phase !== "waiting" &&
-        phase !== "results" &&
-        pipeConnectTiles
-    ) {
+    if (gameType === "pipeconnect" && phase === "playing" && pipeConnectTiles) {
         return (
             <PipeConnectPlayer
                 key={viewKey}
@@ -443,12 +467,7 @@ export function Player({ roomCode, playerName }: Props) {
     }
 
     // ── Rush Hour: hand off to dedicated view ────────────────────────────────
-    if (
-        gameType === "rushhour" &&
-        phase !== "waiting" &&
-        phase !== "results" &&
-        rushHourVehicles
-    ) {
+    if (gameType === "rushhour" && phase === "playing" && rushHourVehicles) {
         return (
             <RushHourPlayer
                 key={viewKey}
@@ -482,6 +501,18 @@ export function Player({ roomCode, playerName }: Props) {
                             Match length: {totalRounds} random rounds
                         </div>
                     </div>
+                )}
+
+                {phase === "shuffling" && shuffleState && (
+                    <RoundShuffleOverlay
+                        gameType={shuffleState.gameType}
+                        roundNumber={shuffleState.roundNumber}
+                        totalRounds={shuffleState.totalRounds}
+                        durationMs={shuffleState.durationMs}
+                        landingBufferMs={shuffleState.landingBufferMs}
+                        title="Drawing the next mini game"
+                        subtitle={`Get ready — ${formatGameLabel(shuffleState.gameType)} is about to begin.`}
+                    />
                 )}
 
                 {(phase === "playing" || phase === "solved") && pieces && (

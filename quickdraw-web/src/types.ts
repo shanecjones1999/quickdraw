@@ -30,6 +30,14 @@ export interface MatchStanding {
     lastRoundPoints: number;
 }
 
+export interface RoundShufflePayload {
+    gameType: GameType;
+    roundNumber: number;
+    totalRounds: number;
+    durationMs: number;
+    landingBufferMs: number;
+}
+
 export interface ProgressSnapshot {
     playerId: string;
     board: (string | null)[][];

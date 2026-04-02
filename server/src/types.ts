@@ -54,13 +54,14 @@ export interface Room {
     code: string;
     hostSocketId: string;
     players: Map<string, Player>;
-    phase: "lobby" | "playing" | "results";
+    phase: "lobby" | "shuffling" | "playing" | "results";
     gameType: GameType;
     totalRounds: number;
     currentRound: number;
     roundSequence: GameType[];
     gameStartTime: number | null;
     finishOrder: string[];
+    roundRevealTimeout: ReturnType<typeof setTimeout> | null;
 }
 
 export interface MatchStanding {

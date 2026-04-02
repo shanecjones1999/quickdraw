@@ -52,6 +52,8 @@ const AVAILABLE_GAME_TYPES: GameType[] = [
 const DEFAULT_MATCH_ROUNDS = 5;
 const MIN_MATCH_ROUNDS = 1;
 const MAX_MATCH_ROUNDS = 12;
+const ROUND_SHUFFLE_DURATION_MS = 4800;
+const ROUND_SHUFFLE_LANDING_BUFFER_MS = 850;
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const useLocalHttps = process.env.LOCAL_HTTPS === "true";
@@ -160,6 +162,13 @@ function clearRoundState(room: Room) {
     }
 }
 
+function clearPendingRoundStart(room: Room) {
+    if (room.roundRevealTimeout) {
+        clearTimeout(room.roundRevealTimeout);
+        room.roundRevealTimeout = null;
+    }
+}
+
 function buildStandings(
     room: Room,
     lastRoundPoints: Map<string, number>,
@@ -184,13 +193,14 @@ function buildStandings(
     }));
 }
 
-function startRound(room: Room) {
+function startRound(room: Room, nextGameType?: GameType) {
     if (room.currentRound >= room.totalRounds) return;
 
     clearRoundState(room);
     room.phase = "playing";
     room.gameStartTime = Date.now();
-    room.gameType = room.roundSequence[room.currentRound] ?? "klotski";
+    room.gameType =
+        nextGameType ?? room.roundSequence[room.currentRound] ?? "klotski";
     room.currentRound += 1;
 
     if (room.gameType === "klotski") {
@@ -306,6 +316,33 @@ function startRound(room: Room) {
     console.log(
         `[host:start] room ${room.code} round ${room.currentRound}/${room.totalRounds} (${room.gameType})`,
     );
+}
+
+function queueRoundStart(room: Room) {
+    if (room.currentRound >= room.totalRounds) return;
+
+    clearPendingRoundStart(room);
+
+    const nextGameType = room.roundSequence[room.currentRound] ?? "klotski";
+    const nextRoundNumber = room.currentRound + 1;
+
+    room.phase = "shuffling";
+    io.to(room.code).emit("round:shuffle", {
+        gameType: nextGameType,
+        roundNumber: nextRoundNumber,
+        totalRounds: room.totalRounds,
+        durationMs: ROUND_SHUFFLE_DURATION_MS,
+        landingBufferMs: ROUND_SHUFFLE_LANDING_BUFFER_MS,
+    });
+
+    room.roundRevealTimeout = setTimeout(() => {
+        room.roundRevealTimeout = null;
+
+        if (getRoom(room.code) !== room) return;
+        if (room.phase !== "shuffling") return;
+
+        startRound(room, nextGameType);
+    }, ROUND_SHUFFLE_DURATION_MS + ROUND_SHUFFLE_LANDING_BUFFER_MS);
 }
 
 // Serve the React build in production
@@ -439,7 +476,7 @@ io.on("connection", (socket) => {
             player.roundsWon = 0;
         }
 
-        startRound(room);
+        queueRoundStart(room);
     });
 
     // ── Player submits a Klotski move ───────────────────────────────
@@ -912,7 +949,7 @@ io.on("connection", (socket) => {
         if (room.phase !== "results") return;
         if (room.currentRound >= room.totalRounds) return;
 
-        startRound(room);
+        queueRoundStart(room);
     });
 
     // ── Host resets the room ────────────────────────────────────────
@@ -920,6 +957,7 @@ io.on("connection", (socket) => {
         const room = getRoomBySocket(socket.id);
         if (!room || room.hostSocketId !== socket.id) return;
 
+        clearPendingRoundStart(room);
         room.phase = "lobby";
         room.currentRound = 0;
         room.roundSequence = [];
@@ -945,6 +983,7 @@ io.on("connection", (socket) => {
         if (!room) return;
 
         if (room.hostSocketId === socket.id) {
+            clearPendingRoundStart(room);
             io.to(room.code).emit("error", { message: "Host disconnected." });
             deleteRoom(room.code);
         } else {
