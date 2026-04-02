@@ -101,6 +101,7 @@ interface ShuffleState {
 export function Player({ roomCode, playerName }: Props) {
     const [gameType, setGameType] = useState<GameType>("klotski");
     const [phase, setPhase] = useState<Phase>("waiting");
+    const [playerCount, setPlayerCount] = useState<number | null>(null);
     const [totalRounds, setTotalRounds] = useState(5);
     const [currentRound, setCurrentRound] = useState(0);
     const [matchOver, setMatchOver] = useState(false);
@@ -134,6 +135,13 @@ export function Player({ roomCode, playerName }: Props) {
     const cellSize = useCellSize();
 
     // Sync game type when host changes it in the lobby
+    const onRoomUpdated = useCallback(
+        ({ players }: { players: Array<{ id: string; name: string }> }) => {
+            setPlayerCount(players.length);
+        },
+        [],
+    );
+
     const onRoomGameType = useCallback(
         ({ gameType: gt }: { gameType: GameType }) => {
             setGameType(gt);
@@ -352,6 +360,7 @@ export function Player({ roomCode, playerName }: Props) {
         setResults([]);
     }, []);
 
+    useSocket("room:updated", onRoomUpdated as never);
     useSocket("room:settings", onRoomSettings as never);
     useSocket("room:gameType", onRoomGameType as never);
     useSocket("round:shuffle", onRoundShuffle as never);
@@ -493,11 +502,48 @@ export function Player({ roomCode, playerName }: Props) {
             <div className={styles.content}>
                 {phase === "waiting" && (
                     <div className={styles.centered}>
-                        <div className={styles.waitTitle}>You're in!</div>
-                        <div className={styles.waitSub}>
-                            Waiting for the host to start the game…
+                        <div className={styles.waitCard}>
+                            <div
+                                className={styles.waitPulse}
+                                aria-hidden="true"
+                            />
+                            <div className={styles.waitEyebrow}>
+                                Connected to room
+                            </div>
+                            <div className={styles.waitTitle}>You're in!</div>
+                            <div className={styles.waitSub}>
+                                Waiting for the host to start the game…
+                            </div>
+                            <div className={styles.joinDetails}>
+                                <div className={styles.joinDetailItem}>
+                                    <span className={styles.joinDetailLabel}>
+                                        Room
+                                    </span>
+                                    <span className={styles.joinDetailValue}>
+                                        {roomCode}
+                                    </span>
+                                </div>
+                                <div className={styles.joinDetailItem}>
+                                    <span className={styles.joinDetailLabel}>
+                                        Player
+                                    </span>
+                                    <span className={styles.joinDetailValue}>
+                                        {playerName}
+                                    </span>
+                                </div>
+                            </div>
+                            {playerCount !== null && (
+                                <div className={styles.playerCountBadge}>
+                                    {playerCount} player
+                                    {playerCount === 1 ? "" : "s"} joined
+                                </div>
+                            )}
                         </div>
                         <div className={styles.hint}>
+                            Keep this phone open — your mini-game will appear
+                            here.
+                        </div>
+                        <div className={styles.waitMeta}>
                             Match length: {totalRounds} random rounds
                         </div>
                     </div>

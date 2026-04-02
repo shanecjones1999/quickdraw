@@ -46,6 +46,37 @@
   text-align: center;
 }
 
+.waitCard {
+  position: relative;
+  width: 100%;
+  padding: 1.5rem 1.25rem;
+  border-radius: 1.1rem;
+  background: linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.04));
+  border: 1px solid rgba(255,255,255,0.12);
+  box-shadow: 0 18px 42px rgba(0,0,0,0.22);
+  overflow: hidden;
+}
+
+.waitPulse {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 999px;
+  background: #2ecc71;
+  box-shadow: 0 0 0 rgba(46,204,113,0.55);
+  animation: pulse 1.8s ease-out infinite;
+}
+
+.waitEyebrow {
+  color: rgba(255,255,255,0.58);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
 .waitTitle {
   font-family: 'Russo One', sans-serif;
   font-size: 1.5rem;
@@ -57,8 +88,59 @@
   font-size: 0.95rem;
 }
 
+.joinDetails {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+}
+
+.joinDetailItem {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 0.85rem 0.9rem;
+  border-radius: 0.8rem;
+  background: rgba(0,0,0,0.18);
+  border: 1px solid rgba(255,255,255,0.08);
+}
+
+.joinDetailLabel {
+  color: rgba(255,255,255,0.5);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.joinDetailValue {
+  color: #fff;
+  font-size: 1rem;
+  font-weight: 700;
+  word-break: break-word;
+}
+
+.playerCountBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 0.9rem;
+  padding: 0.45rem 0.8rem;
+  border-radius: 999px;
+  background: rgba(255,215,0,0.14);
+  border: 1px solid rgba(255,215,0,0.3);
+  color: #ffd700;
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
 .hintAccent {
   color: #e74c3c;
+}
+
+.waitMeta {
+  color: rgba(255,255,255,0.5);
+  font-size: 0.9rem;
 }
 
 .solvedWait {
@@ -144,4 +226,29 @@
 .solvedStats {
   color: rgba(255,255,255,0.6);
   font-size: 1rem;
+}
+
+@keyframes pulse {
+  0% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(46,204,113,0.55);
+  }
+  70% {
+    transform: scale(1);
+    box-shadow: 0 0 0 12px rgba(46,204,113,0);
+  }
+  100% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(46,204,113,0);
+  }
+}
+
+@media (max-width: 420px) {
+  .joinDetails {
+    grid-template-columns: 1fr;
+  }
+
+  .waitCard {
+    padding: 1.25rem 1rem;
+  }
 }
