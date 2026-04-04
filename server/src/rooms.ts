@@ -16,11 +16,13 @@ function generateCode(): string {
     return code;
 }
 
-export function createRoom(hostSocketId: string): Room {
+export function createRoom(hostSocketId: string, hostSessionId: string): Room {
     const code = generateCode();
     const room: Room = {
         code,
         hostSocketId,
+        hostSessionId,
+        hostDisconnectTimeout: null,
         players: new Map(),
         phase: "lobby",
         gameType: "klotski",
@@ -53,6 +55,13 @@ export function getRoomBySocket(socketId: string): Room | undefined {
         for (const player of room.players.values()) {
             if (player.id === socketId) return room;
         }
+    }
+    return undefined;
+}
+
+export function getRoomByHostSessionId(hostSessionId: string): Room | undefined {
+    for (const room of rooms.values()) {
+        if (room.hostSessionId === hostSessionId) return room;
     }
     return undefined;
 }

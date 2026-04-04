@@ -1,10 +1,11 @@
 import express from "express";
 import { createServer as createHttpServer } from "http";
 import { createServer as createHttpsServer } from "https";
+import { randomUUID } from "crypto";
 import { Server } from "socket.io";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
-import { createRoom, getRoom, getRoomBySocket, deleteRoom } from "./rooms.js";
+import { createRoom, getRoom, getRoomBySocket, getRoomByHostSessionId, deleteRoom } from "./rooms.js";
 import { getHandler, getAvailableGameTypes } from "./handlers/index.js";
 import { finishMathSprintState } from "./mathsprint.js";
 import type { MathSprintState } from "./mathsprint.js";
@@ -18,6 +19,7 @@ const ROUND_SHUFFLE_LANDING_BUFFER_MS = 850;
 const RESULTS_AUTO_ADVANCE_MS = 6000;
 const ROUND_READY_TARGET = 1;
 const PLAYER_RECONNECT_GRACE_MS = 30000;
+const HOST_RECONNECT_GRACE_MS = 30000;
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const useLocalHttps = process.env.LOCAL_HTTPS === "true";
@@ -499,6 +501,152 @@ function emitPlayerResumeState(
     }, 0);
 }
 
+// ── Host resume (reconnection) ──────────────────────────────────────
+
+function emitHostResumeState(
+    socket: Parameters<typeof io.on>[1] extends (socket: infer T) => void
+        ? T
+        : never,
+    room: Room,
+) {
+    socket.emit("room:settings", {
+        totalRounds: room.totalRounds,
+        currentRound: room.currentRound,
+    });
+    socket.emit("room:updated", { players: serializePlayers(room) });
+    socket.emit("room:gameType", { gameType: room.gameType });
+
+    if (room.phase === "lobby") return;
+
+    if (room.phase === "shuffling") {
+        socket.emit("round:shuffle", {
+            gameType: room.roundSequence[room.currentRound] ?? room.gameType,
+            availableGameTypes: getAvailableGameTypes(room.players.size),
+            roundNumber: room.currentRound + 1,
+            totalRounds: room.totalRounds,
+            durationMs: Math.max(
+                0,
+                (room.roundReadyOpensAt ?? Date.now()) - Date.now(),
+            ),
+            landingBufferMs: ROUND_SHUFFLE_LANDING_BUFFER_MS,
+        });
+        emitRoundReadyStatus(room);
+        return;
+    }
+
+    if (room.phase === "results") {
+        const handler = getHandler(room.gameType);
+        const results = handler.buildResults(
+            [...room.players.values()].map((p) => ({
+                id: p.id,
+                name: p.name,
+                rank: p.rank,
+                state: p.gameState,
+            })),
+            room,
+        );
+        const lastRoundPoints = new Map<string, number>();
+        const playerCount = room.players.size;
+        const isTeamGame = room.gameType === "teamtug";
+
+        if (isTeamGame) {
+            for (const entry of results as Array<{
+                rank: number;
+                members: Array<{ id: string }>;
+            }>) {
+                const points = Math.max(2 - entry.rank + 1, 1);
+                for (const member of entry.members) {
+                    lastRoundPoints.set(member.id, points);
+                }
+            }
+        } else {
+            for (const entry of results as Array<{
+                id: string;
+                rank?: number | null;
+            }>) {
+                const points =
+                    entry.rank !== null && entry.rank !== undefined
+                        ? Math.max(playerCount - entry.rank + 1, 1)
+                        : 0;
+                lastRoundPoints.set(entry.id, points);
+            }
+        }
+
+        socket.emit("game:over", {
+            results,
+            gameType: room.gameType,
+            roundNumber: room.currentRound,
+            totalRounds: room.totalRounds,
+            matchOver: room.currentRound >= room.totalRounds,
+            standings: buildStandings(room, lastRoundPoints),
+            autoAdvanceAt: room.resultsAutoAdvanceAt,
+        });
+        return;
+    }
+
+    // phase === "playing" — send game:started then progress for all players
+    const handler = getHandler(room.gameType);
+    const basePayload = {
+        gameType: room.gameType,
+        roundNumber: room.currentRound,
+        totalRounds: room.totalRounds,
+    };
+
+    if (room.gameType === "teamtug" && room.teamTugState) {
+        const st = room.teamTugState;
+        socket.emit("game:started", {
+            ...basePayload,
+            teamTugState: {
+                finishLine: st.finishLine,
+                markerPosition: st.markerPosition,
+                timeLimitMs: st.timeLimitMs,
+                startedAt: st.startedAt,
+                winnerTeamId: st.winnerTeamId,
+                teams: (["red", "blue"] as const).map((teamId) => {
+                    const team = st.teams[teamId];
+                    return {
+                        id: team.id,
+                        name: team.name,
+                        totalPulls: team.totalPulls,
+                        members: team.members.map((member) => {
+                            const p = room.players.get(member.sessionId);
+                            return {
+                                id: p?.id ?? member.sessionId,
+                                sessionId: member.sessionId,
+                                name: p?.name ?? "Disconnected Player",
+                                connected: p?.connected ?? false,
+                                contribution:
+                                    team.contributions[member.sessionId] ?? 0,
+                            };
+                        }),
+                    };
+                }),
+            },
+        });
+        return;
+    }
+
+    if (room.gameType === "mathsprint") {
+        socket.emit("game:started", {
+            ...basePayload,
+            endAt: room.roundEndAt,
+        });
+    } else {
+        socket.emit("game:started", basePayload);
+    }
+
+    // Re-send progress snapshots for each player so the host dashboard populates
+    setTimeout(() => {
+        for (const player of room.players.values()) {
+            if (!player.gameState) continue;
+            io.to(room.hostSocketId).emit(
+                handler.progressEvent,
+                handler.progressPayload(player.gameState, player.id, player.rank),
+            );
+        }
+    }, 0);
+}
+
 // ── End game ────────────────────────────────────────────────────────
 
 function endGame(roomCode: string) {
@@ -628,15 +776,55 @@ io.on("connection", (socket) => {
 
     // ── Host creates a room ─────────────────────────────────────────
     socket.on("host:create", () => {
-        const room = createRoom(socket.id);
+        const hostSessionId = randomUUID();
+        const room = createRoom(socket.id, hostSessionId);
         socket.join(room.code);
-        socket.emit("room:created", { roomCode: room.code });
+        socket.emit("room:created", {
+            roomCode: room.code,
+            hostSessionId,
+        });
         socket.emit("room:settings", {
             totalRounds: room.totalRounds,
             currentRound: room.currentRound,
         });
         console.log(`[host:create] room ${room.code}`);
     });
+
+    // ── Host rejoins after disconnect ───────────────────────────────
+    socket.on(
+        "host:rejoin",
+        ({
+            roomCode,
+            hostSessionId,
+        }: {
+            roomCode: string;
+            hostSessionId: string;
+        }) => {
+            const code = roomCode?.toUpperCase().trim();
+            const sessionId = hostSessionId?.trim();
+            if (!code || !sessionId) {
+                socket.emit("error", { message: "Invalid rejoin request." });
+                return;
+            }
+
+            const room = getRoomByHostSessionId(sessionId);
+            if (!room || room.code !== code) {
+                socket.emit("error", { message: "Room not found." });
+                return;
+            }
+
+            if (room.hostDisconnectTimeout) {
+                clearTimeout(room.hostDisconnectTimeout);
+                room.hostDisconnectTimeout = null;
+            }
+
+            room.hostSocketId = socket.id;
+            socket.join(room.code);
+
+            emitHostResumeState(socket, room);
+            console.log(`[host:rejoin] room ${room.code} (reconnected)`);
+        },
+    );
 
     socket.on(
         "host:setTotalRounds",
@@ -904,13 +1092,27 @@ io.on("connection", (socket) => {
         if (!room) return;
 
         if (room.hostSocketId === socket.id) {
-            clearPendingRoundStart(room);
-            clearPendingResultsAdvance(room);
-            clearRoundEndTimeout(room);
-            const handler = getHandler(room.gameType);
-            handler.onCleanup?.(room);
-            io.to(room.code).emit("error", { message: "Host disconnected." });
-            deleteRoom(room.code);
+            // Give the host a grace period to reconnect (e.g. page refresh)
+            if (room.hostDisconnectTimeout) {
+                clearTimeout(room.hostDisconnectTimeout);
+            }
+
+            room.hostDisconnectTimeout = setTimeout(() => {
+                const currentRoom = getRoom(room.code);
+                if (!currentRoom) return;
+                // If the host reconnected with a new socket, don't destroy
+                if (currentRoom.hostSocketId !== socket.id) return;
+
+                clearPendingRoundStart(currentRoom);
+                clearPendingResultsAdvance(currentRoom);
+                clearRoundEndTimeout(currentRoom);
+                const handler = getHandler(currentRoom.gameType);
+                handler.onCleanup?.(currentRoom);
+                io.to(currentRoom.code).emit("error", {
+                    message: "Host disconnected.",
+                });
+                deleteRoom(currentRoom.code);
+            }, HOST_RECONNECT_GRACE_MS);
         } else {
             const player = getPlayerBySocket(room, socket.id);
             if (!player) return;

@@ -17,7 +17,7 @@ import styles from "../styles/Landing.module.css";
 type Screen = "home" | "join";
 
 interface Props {
-    onHostCreated: (roomCode: string) => void;
+    onHostCreated: (roomCode: string, hostSessionId: string) => void;
     onPlayerJoined: (
         roomCode: string,
         playerName: string,
@@ -130,11 +130,17 @@ export function Landing({ onHostCreated, onPlayerJoined }: Props) {
             );
         };
 
-        const handleCreated = ({ roomCode }: { roomCode: string }) => {
+        const handleCreated = ({
+            roomCode,
+            hostSessionId,
+        }: {
+            roomCode: string;
+            hostSessionId: string;
+        }) => {
             cleanup();
             setLoading(false);
             clearLandingDraft();
-            onHostCreated(roomCode);
+            onHostCreated(roomCode, hostSessionId);
         };
 
         const cleanup = () => {

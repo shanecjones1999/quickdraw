@@ -10,8 +10,14 @@ export interface PlayerSession {
     playerSessionId: string;
 }
 
+export interface HostSession {
+    roomCode: string;
+    hostSessionId: string;
+}
+
 const LANDING_DRAFT_KEY = "quickdraw:landing-draft";
 const PLAYER_SESSION_KEY = "quickdraw:player-session";
+const HOST_SESSION_KEY = "quickdraw:host-session";
 
 function createSessionId() {
     if (
@@ -108,4 +114,46 @@ export function getOrCreatePlayerSessionId() {
 export function clearPlayerSession() {
     if (!canUseStorage()) return;
     window.sessionStorage.removeItem(PLAYER_SESSION_KEY);
+}
+
+export function loadHostSession(): HostSession | null {
+    if (!canUseStorage()) return null;
+
+    const raw = window.sessionStorage.getItem(HOST_SESSION_KEY);
+    if (!raw) return null;
+
+    try {
+        const parsed = JSON.parse(raw) as HostSession;
+        if (
+            typeof parsed.roomCode === "string" &&
+            typeof parsed.hostSessionId === "string" &&
+            parsed.roomCode.trim() &&
+            parsed.hostSessionId.trim()
+        ) {
+            return {
+                roomCode: parsed.roomCode.toUpperCase().trim(),
+                hostSessionId: parsed.hostSessionId.trim(),
+            };
+        }
+    } catch {
+        window.sessionStorage.removeItem(HOST_SESSION_KEY);
+    }
+
+    return null;
+}
+
+export function saveHostSession(session: HostSession) {
+    if (!canUseStorage()) return;
+    window.sessionStorage.setItem(
+        HOST_SESSION_KEY,
+        JSON.stringify({
+            roomCode: session.roomCode.toUpperCase().trim(),
+            hostSessionId: session.hostSessionId.trim(),
+        }),
+    );
+}
+
+export function clearHostSession() {
+    if (!canUseStorage()) return;
+    window.sessionStorage.removeItem(HOST_SESSION_KEY);
 }

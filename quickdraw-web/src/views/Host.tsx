@@ -59,6 +59,8 @@ type Phase = "lobby" | "shuffling" | "playing" | "results";
 
 interface Props {
     roomCode: string;
+    hostSessionId: string;
+    resumeSession: boolean;
 }
 
 const MEDALS = ["🥇", "🥈", "🥉"];
@@ -92,7 +94,7 @@ function getTopName<T extends { name: string; rank: number | null }>(
     );
 }
 
-export function Host({ roomCode }: Props) {
+export function Host({ roomCode, hostSessionId, resumeSession }: Props) {
     const [phase, setPhase] = useState<Phase>("lobby");
     const [players, setPlayers] = useState<PlayerInfo[]>([]);
     const [gameType, setGameTypeState] = useState<GameType>("klotski");
@@ -188,6 +190,31 @@ export function Host({ roomCode }: Props) {
     const { notice, dismissNotice, retryConnection } = useConnectionNotice({
         role: "host",
     });
+
+    // Reconnect after page refresh
+    useEffect(() => {
+        if (!resumeSession) return;
+
+        const rejoinRoom = () => {
+            socket.emit("host:rejoin", {
+                roomCode: roomCode.toUpperCase().trim(),
+                hostSessionId,
+            });
+        };
+
+        if (socket.connected) {
+            rejoinRoom();
+            return;
+        }
+
+        socket.connect();
+        socket.once("connect", rejoinRoom);
+
+        return () => {
+            socket.off("connect", rejoinRoom);
+        };
+    }, [hostSessionId, resumeSession, roomCode]);
+
     const playerCount = players.length;
     const canStart = playerCount >= MIN_PLAYERS_TO_START;
     const playersNeeded = Math.max(MIN_PLAYERS_TO_START - playerCount, 0);

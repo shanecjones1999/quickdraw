@@ -55,6 +55,8 @@ export interface Player {
 export interface Room {
     code: string;
     hostSocketId: string;
+    hostSessionId: string;
+    hostDisconnectTimeout: ReturnType<typeof setTimeout> | null;
     players: Map<string, Player>;
     phase: "lobby" | "shuffling" | "playing" | "results";
     gameType: GameType;
