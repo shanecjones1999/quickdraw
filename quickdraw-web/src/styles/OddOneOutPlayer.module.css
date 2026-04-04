@@ -1,0 +1,56 @@
+.metaRow {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  gap: 0.8rem;
+  flex-wrap: wrap;
+  color: rgba(255,255,255,0.72);
+  font-size: 0.9rem;
+}
+
+.grid {
+  width: min(100%, 420px);
+  display: grid;
+  gap: 0.7rem;
+  transition: opacity 0.15s ease;
+}
+
+.gridLocked {
+  opacity: 0.58;
+}
+
+.cell {
+  aspect-ratio: 1;
+  border-radius: 1rem;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.03));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 12px 28px rgba(0,0,0,0.2);
+  transition: transform 0.08s ease, border-color 0.12s ease;
+}
+
+.cell:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.cell:disabled {
+  cursor: default;
+}
+
+.glyph {
+  font-size: clamp(2rem, 9vw, 3.1rem);
+  line-height: 1;
+  text-shadow: 0 8px 18px rgba(0,0,0,0.22);
+}
+
+.emptyState {
+  width: min(100%, 360px);
+  padding: 1rem 1.15rem;
+  border-radius: 1rem;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.12);
+  color: rgba(255,255,255,0.7);
+  text-align: center;
+}

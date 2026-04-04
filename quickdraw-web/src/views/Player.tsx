@@ -11,10 +11,15 @@ import { RoundShuffleOverlay } from "../components/RoundShuffleOverlay";
 import { BowmanPlayer } from "./BowmanPlayer";
 import { CodebreakerPlayer } from "./CodebreakerPlayer";
 import { LightsOutPlayer } from "./LightsOutPlayer";
+import { MathSprintPlayer } from "./MathSprintPlayer";
 import { MemorySequencePlusPlayer } from "./MemorySequencePlusPlayer";
+import { PairMatchPlayer } from "./PairMatchPlayer";
+import { ReactionTapPlayer } from "./ReactionTapPlayer";
+import { OddOneOutPlayer } from "./OddOneOutPlayer";
 import { PipeConnectPlayer } from "./PipeConnectPlayer";
 import { RushHourPlayer } from "./RushHourPlayer";
 import { SimonCopyPlayer } from "./SimonCopyPlayer";
+import { TeamTugPlayer } from "./TeamTugPlayer";
 import type {
     BowmanResult,
     CodebreakerResult,
@@ -22,8 +27,18 @@ import type {
     GameOverPayload,
     LightsOutResult,
     MatchStanding,
+    MathSprintConfig,
+    MathSprintQuestion,
+    MathSprintResult,
     MemorySequencePlusConfig,
     MemorySequencePlusResult,
+    PairMatchResult,
+    PairMatchTile,
+    ReactionTapConfig,
+    ReactionTapResult,
+    OddOneOutConfig,
+    OddOneOutPrompt,
+    OddOneOutResult,
     Piece,
     PipeConnectResult,
     PipeConnectTile,
@@ -36,6 +51,8 @@ import type {
     GameType,
     RoundShufflePayload,
     RushHourVehicle,
+    TeamTugStateSnapshot,
+    TeamTugTeamResult,
 } from "../types";
 import styles from "../styles/Player.module.css";
 
@@ -44,10 +61,14 @@ type RoundResult =
     | Result
     | BowmanResult
     | CodebreakerResult
+    | MathSprintResult
     | LightsOutResult
     | PipeConnectResult
     | SimonCopyResult
     | MemorySequencePlusResult
+    | PairMatchResult
+    | OddOneOutResult
+    | ReactionTapResult
     | RushHourResult;
 
 function describeRoundResult(result: RoundResult, gameType: GameType): string {
@@ -59,6 +80,10 @@ function describeRoundResult(result: RoundResult, gameType: GameType): string {
         return entry.solved
             ? `${entry.attempts} guesses`
             : `${entry.attempts} used`;
+    }
+    if (gameType === "mathsprint") {
+        const entry = result as MathSprintResult;
+        return `${entry.score} pts · ${entry.answeredCount} answered`;
     }
     if (gameType === "lightsout") {
         const entry = result as LightsOutResult;
@@ -80,6 +105,20 @@ function describeRoundResult(result: RoundResult, gameType: GameType): string {
             ? `Round ${entry.roundReached}`
             : `Out at ${entry.roundReached}`;
     }
+    if (gameType === "oddoneout") {
+        const entry = result as OddOneOutResult;
+        return `${entry.score} pts · ${formatTime(entry.totalResponseTime)}`;
+    }
+    if (gameType === "pairmatch") {
+        const entry = result as PairMatchResult;
+        return entry.solved
+            ? `${entry.attempts} attempts`
+            : `${entry.pairsFound}/${entry.totalPairs} pairs`;
+    }
+    if (gameType === "reactiontap") {
+        const entry = result as ReactionTapResult;
+        return `${entry.score} pts · ${entry.successfulPrompts}/${entry.goPrompts} hits · ${entry.penalties} pen`;
+    }
     if (gameType === "rushhour") {
         const entry = result as RushHourResult;
         return entry.moves !== null ? `${entry.moves} moves` : "DNF";
@@ -98,6 +137,7 @@ interface Props {
 
 interface ShuffleState {
     gameType: GameType;
+    availableGameTypes: GameType[];
     roundNumber: number;
     totalRounds: number;
     durationMs: number;
@@ -138,16 +178,25 @@ export function Player({
     const [bowmanWind, setBowmanWind] = useState(0);
     const [codebreakerConfig, setCodebreakerConfig] =
         useState<CodebreakerConfig | null>(null);
+    const [mathSprintConfig, setMathSprintConfig] =
+        useState<MathSprintConfig | null>(null);
     const [simonCopyConfig, setSimonCopyConfig] =
         useState<SimonCopyConfig | null>(null);
     const [memorySequencePlusConfig, setMemorySequencePlusConfig] =
         useState<MemorySequencePlusConfig | null>(null);
+    const [oddOneOutConfig, setOddOneOutConfig] =
+        useState<OddOneOutConfig | null>(null);
+    const [reactionTapConfig, setReactionTapConfig] =
+        useState<ReactionTapConfig | null>(null);
     const [lightsOutBoard, setLightsOutBoard] = useState<boolean[][] | null>(
         null,
     );
     const [pipeConnectTiles, setPipeConnectTiles] = useState<
         PipeConnectTile[] | null
     >(null);
+    const [pairMatchTiles, setPairMatchTiles] = useState<PairMatchTile[] | null>(
+        null,
+    );
     const [rushHourVehicles, setRushHourVehicles] = useState<
         RushHourVehicle[] | null
     >(null);
@@ -157,6 +206,9 @@ export function Player({
     const [rank, setRank] = useState<number | null>(null);
     const [solveTime, setSolveTime] = useState<number | null>(null);
     const [results, setResults] = useState<RoundResult[]>([]);
+    const [teamTugState, setTeamTugState] =
+        useState<TeamTugStateSnapshot | null>(null);
+    const [teamTugResults, setTeamTugResults] = useState<TeamTugTeamResult[]>([]);
     const [startTime, setStartTime] = useState<number | null>(null);
     const [shuffleState, setShuffleState] = useState<ShuffleState | null>(null);
     const [shuffleReadyState, setShuffleReadyState] =
@@ -175,7 +227,8 @@ export function Player({
         playerName,
         playerSessionId,
     });
-    const recentWinnerName = getTopName(results);
+    const recentWinnerName =
+        gameType === "teamtug" ? getTopName(teamTugResults) : getTopName(results);
     const leaderName =
         standings.find((standing) => standing.position === 1)?.name ?? null;
     const resultsCountdownSeconds =
@@ -273,14 +326,36 @@ export function Player({
             colors,
             gridSize,
             maxRounds,
+            prompt,
+            promptCount,
             roundNumber,
             totalRounds: nextTotalRounds,
+            durationMs,
+            endAt,
+            question,
+            score,
+            answeredCount,
+            streak,
+            bestStreak,
+            lastAnswerCorrect,
+            totalPrompts,
+            goPrompts,
+            teamTugState: nextTeamTugState,
         }: {
             gameType: GameType;
             board?: (string | null)[][] | boolean[][];
-            tiles?: PipeConnectTile[];
+            tiles?: PipeConnectTile[] | PairMatchTile[];
             pieces?: Record<string, Piece>;
             wind?: number;
+            durationMs?: number;
+            endAt?: number | null;
+            question?: MathSprintQuestion;
+            score?: number;
+            answeredCount?: number;
+            streak?: number;
+            bestStreak?: number;
+            lastAnswerCorrect?: boolean | null;
+            teamTugState?: TeamTugStateSnapshot | null;
             vehicles?: RushHourVehicle[];
             palette?: string[];
             codeLength?: number;
@@ -289,6 +364,10 @@ export function Player({
             colors?: ("red" | "blue" | "green" | "yellow")[];
             gridSize?: number;
             maxRounds?: number;
+            prompt?: OddOneOutPrompt | null;
+            promptCount?: number;
+            totalPrompts?: number;
+            goPrompts?: number;
             roundNumber: number;
             totalRounds: number;
         }) => {
@@ -300,6 +379,7 @@ export function Player({
             setMatchOver(false);
             setStandings([]);
             setResults([]);
+            setTeamTugResults([]);
             setViewKey(`${roundNumber}-${gt}`);
             setShuffleReadyState(null);
             if (gt === "klotski") {
@@ -326,6 +406,18 @@ export function Player({
                     maxRounds: maxRounds ?? 6,
                 });
                 setPhase("playing");
+            } else if (gt === "mathsprint") {
+                setMathSprintConfig({
+                    durationMs: durationMs ?? 30000,
+                    endAt: endAt ?? null,
+                    question: question ?? { id: 0, prompt: "0 + 0", answers: [] },
+                    score: score ?? 0,
+                    answeredCount: answeredCount ?? 0,
+                    streak: streak ?? 0,
+                    bestStreak: bestStreak ?? 0,
+                    lastAnswerCorrect: lastAnswerCorrect ?? null,
+                });
+                setPhase("playing");
             } else if (gt === "memorysequenceplus") {
                 setMemorySequencePlusConfig({
                     sequence: (sequence as number[]) ?? [],
@@ -333,14 +425,32 @@ export function Player({
                     maxRounds: maxRounds ?? 8,
                 });
                 setPhase("playing");
+            } else if (gt === "pairmatch") {
+                setPairMatchTiles((t as PairMatchTile[]) ?? []);
+                setPhase("playing");
+            } else if (gt === "reactiontap") {
+                setReactionTapConfig({
+                    totalPrompts: totalPrompts ?? 6,
+                    goPrompts: goPrompts ?? 4,
+                });
+                setPhase("playing");
+            } else if (gt === "oddoneout") {
+                setOddOneOutConfig({
+                    prompt: prompt ?? null,
+                    promptCount: promptCount ?? 0,
+                });
+                setPhase("playing");
             } else if (gt === "pipeconnect") {
-                setPipeConnectTiles(t ?? []);
+                setPipeConnectTiles((t as PipeConnectTile[]) ?? []);
                 setPhase("playing");
             } else if (gt === "lightsout") {
                 setLightsOutBoard((b as boolean[][]) ?? []);
                 setPhase("playing");
             } else if (gt === "rushhour") {
                 setRushHourVehicles(v ?? []);
+                setPhase("playing");
+            } else if (gt === "teamtug") {
+                setTeamTugState(nextTeamTugState ?? null);
                 setPhase("playing");
             } else {
                 setBowmanWind(w ?? 0);
@@ -353,6 +463,7 @@ export function Player({
     const onRoundShuffle = useCallback(
         ({
             gameType: gt,
+            availableGameTypes,
             roundNumber,
             totalRounds: nextTotalRounds,
             durationMs,
@@ -367,6 +478,7 @@ export function Player({
             setResultsAutoAdvanceAt(null);
             setShuffleState({
                 gameType: gt,
+                availableGameTypes,
                 roundNumber,
                 totalRounds: nextTotalRounds,
                 durationMs,
@@ -446,7 +558,15 @@ export function Player({
         }: GameOverPayload<RoundResult[]>) => {
             setShuffleState(null);
             setGameType(gt);
-            setResults(roundResults);
+            if (gt === "teamtug") {
+                setTeamTugResults(
+                    roundResults as unknown as TeamTugTeamResult[],
+                );
+                setResults([]);
+            } else {
+                setResults(roundResults);
+                setTeamTugResults([]);
+            }
             setCurrentRound(roundNumber);
             setTotalRounds(nextTotalRounds);
             setMatchOver(isMatchOver);
@@ -467,8 +587,14 @@ export function Player({
         setShuffleState(null);
         setStandings([]);
         setCodebreakerConfig(null);
+        setMathSprintConfig(null);
         setSimonCopyConfig(null);
         setMemorySequencePlusConfig(null);
+        setPairMatchTiles(null);
+        setReactionTapConfig(null);
+        setTeamTugState(null);
+        setTeamTugResults([]);
+        setOddOneOutConfig(null);
         setPieces(null);
         setLightsOutBoard(null);
         setPipeConnectTiles(null);
@@ -593,6 +719,37 @@ export function Player({
         );
     }
 
+    if (gameType === "mathsprint" && phase === "playing" && mathSprintConfig) {
+        return (
+            <>
+                {notice && (
+                    <ConnectionNotice
+                        floating
+                        tone={notice.tone}
+                        title={notice.title}
+                        message={notice.message}
+                        actionLabel="Retry now"
+                        onAction={retryConnection}
+                        onDismiss={dismissNotice}
+                    />
+                )}
+                <MathSprintPlayer
+                    key={viewKey}
+                    roomCode={roomCode}
+                    playerName={playerName}
+                    durationMs={mathSprintConfig.durationMs}
+                    endAt={mathSprintConfig.endAt}
+                    question={mathSprintConfig.question}
+                    score={mathSprintConfig.score}
+                    answeredCount={mathSprintConfig.answeredCount}
+                    streak={mathSprintConfig.streak}
+                    bestStreak={mathSprintConfig.bestStreak}
+                    lastAnswerCorrect={mathSprintConfig.lastAnswerCorrect}
+                />
+            </>
+        );
+    }
+
     if (gameType === "simoncopy" && phase === "playing" && simonCopyConfig) {
         return (
             <>
@@ -649,6 +806,80 @@ export function Player({
         );
     }
 
+    if (gameType === "oddoneout" && phase === "playing" && oddOneOutConfig) {
+        return (
+            <>
+                {notice && (
+                    <ConnectionNotice
+                        floating
+                        tone={notice.tone}
+                        title={notice.title}
+                        message={notice.message}
+                        actionLabel="Retry now"
+                        onAction={retryConnection}
+                        onDismiss={dismissNotice}
+                    />
+                )}
+                <OddOneOutPlayer
+                    key={viewKey}
+                    roomCode={roomCode}
+                    playerName={playerName}
+                    initialPrompt={oddOneOutConfig.prompt}
+                    totalPrompts={oddOneOutConfig.promptCount}
+                />
+            </>
+        );
+    }
+
+    if (gameType === "reactiontap" && phase === "playing" && reactionTapConfig) {
+        return (
+            <>
+                {notice && (
+                    <ConnectionNotice
+                        floating
+                        tone={notice.tone}
+                        title={notice.title}
+                        message={notice.message}
+                        actionLabel="Retry now"
+                        onAction={retryConnection}
+                        onDismiss={dismissNotice}
+                    />
+                )}
+                <ReactionTapPlayer
+                    key={viewKey}
+                    roomCode={roomCode}
+                    playerName={playerName}
+                    totalPrompts={reactionTapConfig.totalPrompts}
+                    goPrompts={reactionTapConfig.goPrompts}
+                />
+            </>
+        );
+    }
+
+    if (gameType === "pairmatch" && phase === "playing" && pairMatchTiles) {
+        return (
+            <>
+                {notice && (
+                    <ConnectionNotice
+                        floating
+                        tone={notice.tone}
+                        title={notice.title}
+                        message={notice.message}
+                        actionLabel="Retry now"
+                        onAction={retryConnection}
+                        onDismiss={dismissNotice}
+                    />
+                )}
+                <PairMatchPlayer
+                    key={viewKey}
+                    roomCode={roomCode}
+                    playerName={playerName}
+                    initialTiles={pairMatchTiles}
+                />
+            </>
+        );
+    }
+
     if (gameType === "pipeconnect" && phase === "playing" && pipeConnectTiles) {
         return (
             <>
@@ -693,6 +924,31 @@ export function Player({
                     roomCode={roomCode}
                     playerName={playerName}
                     initialVehicles={rushHourVehicles}
+                />
+            </>
+        );
+    }
+
+    if (gameType === "teamtug" && phase === "playing" && teamTugState) {
+        return (
+            <>
+                {notice && (
+                    <ConnectionNotice
+                        floating
+                        tone={notice.tone}
+                        title={notice.title}
+                        message={notice.message}
+                        actionLabel="Retry now"
+                        onAction={retryConnection}
+                        onDismiss={dismissNotice}
+                    />
+                )}
+                <TeamTugPlayer
+                    key={viewKey}
+                    roomCode={roomCode}
+                    playerName={playerName}
+                    playerSessionId={playerSessionId}
+                    initialState={teamTugState}
                 />
             </>
         );
@@ -774,6 +1030,7 @@ export function Player({
                     <RoundShuffleOverlay
                         key={`${shuffleState.roundNumber}-${shuffleState.gameType}`}
                         gameType={shuffleState.gameType}
+                        availableGameTypes={shuffleState.availableGameTypes}
                         roundNumber={shuffleState.roundNumber}
                         totalRounds={shuffleState.totalRounds}
                         durationMs={shuffleState.durationMs}
@@ -862,26 +1119,75 @@ export function Player({
                             </div>
                         )}
                         <div className={styles.resultsList}>
-                            {results.map((r, i) => (
-                                <div
-                                    key={r.id}
-                                    className={`${styles.resultRow} ${r.id === socket.id ? styles.highlight : ""}`}
-                                >
-                                    <span>
-                                        {r.rank !== null && r.rank <= 3
-                                            ? MEDALS[r.rank - 1]
-                                            : `#${r.rank ?? i + 1}`}
-                                    </span>
-                                    <span className={styles.resultName}>
-                                        {r.name}
-                                        {r.id === socket.id ? " (you)" : ""}
-                                    </span>
-                                    <span className={styles.resultTime}>
-                                        {describeRoundResult(r, gameType)}
-                                    </span>
-                                </div>
-                            ))}
+                            {gameType === "teamtug"
+                                ? teamTugResults.map((team) => (
+                                      <div
+                                          key={team.id}
+                                          className={styles.resultRow}
+                                      >
+                                          <span>
+                                              {team.rank <= 3
+                                                  ? MEDALS[team.rank - 1]
+                                                  : `#${team.rank}`}
+                                          </span>
+                                          <span className={styles.resultName}>
+                                              {team.name} Team
+                                              {team.members.some(
+                                                  (member) =>
+                                                      member.sessionId ===
+                                                      playerSessionId,
+                                              )
+                                                  ? " (you)"
+                                                  : ""}
+                                          </span>
+                                          <span className={styles.resultTime}>
+                                              {team.pulls} pulls
+                                          </span>
+                                      </div>
+                                  ))
+                                : results.map((r, i) => (
+                                      <div
+                                          key={r.id}
+                                          className={`${styles.resultRow} ${r.id === socket.id ? styles.highlight : ""}`}
+                                      >
+                                          <span>
+                                              {r.rank !== null && r.rank <= 3
+                                                  ? MEDALS[r.rank - 1]
+                                                  : `#${r.rank ?? i + 1}`}
+                                          </span>
+                                          <span className={styles.resultName}>
+                                              {r.name}
+                                              {r.id === socket.id ? " (you)" : ""}
+                                          </span>
+                                          <span className={styles.resultTime}>
+                                              {describeRoundResult(r, gameType)}
+                                          </span>
+                                      </div>
+                                  ))}
                         </div>
+                        {gameType === "teamtug" && (
+                            <div className={styles.resultsList}>
+                                {teamTugResults.map((team) =>
+                                    team.members.map((member) => (
+                                        <div
+                                            key={`${team.id}-${member.sessionId}`}
+                                            className={`${styles.resultRow} ${member.sessionId === playerSessionId ? styles.highlight : ""}`}
+                                        >
+                                            <span>•</span>
+                                            <span className={styles.resultName}>
+                                                {member.name}
+                                                {member.sessionId === playerSessionId
+                                                    ? " (you)"
+                                                    : ""}
+                                            </span>
+                                            <span className={styles.resultTime}>
+                                                {team.name} · {member.contribution} pulls
+                                            </span>
+                                        </div>
+                                    )),
+                                )}
+                            </div>
+                        )}
 
                         <div className={styles.resultsList}>
                             {standings.map((standing) => (

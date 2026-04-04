@@ -17,17 +17,49 @@ import {
 } from "./codebreaker.js";
 import { createLightsOutState, applyLightsOutMove } from "./lightsout.js";
 import {
+    MATH_SPRINT_ROUND_DURATION_MS,
+    createMathSprintState,
+    finishMathSprintState,
+    serializeMathSprintQuestion,
+    submitMathSprintAnswer,
+} from "./mathsprint.js";
+import {
     MEMORY_SEQUENCE_PLUS_GRID_SIZE,
     MEMORY_SEQUENCE_PLUS_MAX_ROUNDS,
     createMemorySequencePlusState,
     submitMemorySequencePlusRound,
 } from "./memorysequenceplus.js";
 import {
+    PAIR_MATCH_MISMATCH_REVEAL_MS,
+    PAIR_MATCH_PAIR_COUNT,
+    clearPairMatchMismatch,
+    createPairMatchState,
+    flipPairMatchTile,
+    getPairMatchLayout,
+    toPublicPairMatchTiles,
+} from "./pairmatch.js";
+import {
+    createOddOneOutPromptSet,
+    createOddOneOutState,
+    getCurrentOddOneOutPrompt,
+    processOddOneOutSelection,
+} from "./oddoneout.js";
+import {
     PIPE_CONNECT_PUZZLE_COUNT,
     applyPipeConnectRotate,
     createPipeConnectState,
     toPublicPipeConnectTiles,
 } from "./pipeconnect.js";
+import {
+    REACTION_TAP_GO_PROMPTS,
+    REACTION_TAP_TOTAL_PROMPTS,
+    createReactionTapRoomState,
+    createReactionTapState,
+    recordReactionTapDecoy,
+    recordReactionTapMiss,
+    recordReactionTapPenalty,
+    recordReactionTapSuccess,
+} from "./reactiontap.js";
 import { createRushHourState, applyRushHourMove } from "./rushhour.js";
 import {
     SIMON_COPY_COLORS,
@@ -35,6 +67,11 @@ import {
     createSimonCopyState,
     submitSimonCopyRound,
 } from "./simoncopy.js";
+import {
+    applyTeamTugPull,
+    createTeamTugState,
+    getLeadingTeamTugTeamId,
+} from "./teamtug.js";
 import type { GameType } from "./types.js";
 import type { MatchStanding, Player, Room } from "./types.js";
 
@@ -42,11 +79,16 @@ const AVAILABLE_GAME_TYPES: GameType[] = [
     "klotski",
     "bowman",
     "codebreaker",
+    "mathsprint",
     "pipeconnect",
     "simoncopy",
     "memorysequenceplus",
+    "pairmatch",
+    "oddoneout",
+    "reactiontap",
     "rushhour",
     "lightsout",
+    "teamtug",
 ];
 
 const DEFAULT_MATCH_ROUNDS = 5;
@@ -109,8 +151,16 @@ function sanitizeTotalRounds(value: number | undefined): number {
     );
 }
 
-function shuffleGameTypes(): GameType[] {
-    const pool = [...AVAILABLE_GAME_TYPES];
+function getAvailableGameTypes(playerCount: number): GameType[] {
+    if (playerCount >= 2) {
+        return AVAILABLE_GAME_TYPES;
+    }
+
+    return AVAILABLE_GAME_TYPES.filter((gameType) => gameType !== "teamtug");
+}
+
+function shuffleGameTypes(gameTypes: GameType[]): GameType[] {
+    const pool = [...gameTypes];
     for (let index = pool.length - 1; index > 0; index -= 1) {
         const swapIndex = Math.floor(Math.random() * (index + 1));
         [pool[index], pool[swapIndex]] = [pool[swapIndex], pool[index]];
@@ -118,16 +168,17 @@ function shuffleGameTypes(): GameType[] {
     return pool;
 }
 
-function createRoundSequence(totalRounds: number): GameType[] {
+function createRoundSequence(totalRounds: number, playerCount: number): GameType[] {
+    const availableGameTypes = getAvailableGameTypes(playerCount);
     const sequence: GameType[] = [];
 
     while (sequence.length < totalRounds) {
-        let bag = shuffleGameTypes();
+        let bag = shuffleGameTypes(availableGameTypes);
 
         if (sequence.length > 0) {
             let attempts = 0;
             while (bag[0] === sequence.at(-1) && attempts < 5) {
-                bag = shuffleGameTypes();
+                bag = shuffleGameTypes(availableGameTypes);
                 attempts += 1;
             }
         }
@@ -198,6 +249,91 @@ function getPlayerById(room: Room, id: string) {
     }
 
     return undefined;
+}
+
+function serializeTeamTugState(room: Room) {
+    if (!room.teamTugState) {
+        return null;
+    }
+
+    return {
+        finishLine: room.teamTugState.finishLine,
+        markerPosition: room.teamTugState.markerPosition,
+        timeLimitMs: room.teamTugState.timeLimitMs,
+        startedAt: room.teamTugState.startedAt,
+        winnerTeamId: room.teamTugState.winnerTeamId,
+        teams: (["red", "blue"] as const).map((teamId) => {
+            const team = room.teamTugState!.teams[teamId];
+
+            return {
+                id: team.id,
+                name: team.name,
+                totalPulls: team.totalPulls,
+                members: team.members.map((member) => {
+                    const player = room.players.get(member.sessionId);
+
+                    return {
+                        id: player?.id ?? member.sessionId,
+                        sessionId: member.sessionId,
+                        name: player?.name ?? "Disconnected Player",
+                        connected: player?.connected ?? false,
+                        contribution: team.contributions[member.sessionId] ?? 0,
+                    };
+                }),
+            };
+        }),
+    };
+}
+
+function buildTeamTugResults(room: Room) {
+    if (!room.teamTugState) {
+        return [];
+    }
+
+    const uniqueWinnerTeamId =
+        room.teamTugState.winnerTeamId ?? getLeadingTeamTugTeamId(room.teamTugState);
+
+    return (["red", "blue"] as const)
+        .map((teamId) => {
+            const team = room.teamTugState!.teams[teamId];
+            const isTie = uniqueWinnerTeamId === null;
+
+            return {
+                id: team.id,
+                name: team.name,
+                pulls: team.totalPulls,
+                winner: !isTie && uniqueWinnerTeamId === team.id,
+                rank: isTie ? 1 : uniqueWinnerTeamId === team.id ? 1 : 2,
+                members: team.members
+                    .map((member) => {
+                        const player = room.players.get(member.sessionId);
+
+                        return {
+                            id: player?.id ?? member.sessionId,
+                            sessionId: member.sessionId,
+                            name: player?.name ?? "Disconnected Player",
+                            contribution:
+                                team.contributions[member.sessionId] ?? 0,
+                        };
+                    })
+                    .sort(
+                        (left, right) =>
+                            right.contribution - left.contribution ||
+                            left.name.localeCompare(right.name),
+                    ),
+            };
+        })
+        .sort((left, right) => {
+            if (left.rank !== right.rank) {
+                return left.rank - right.rank;
+            }
+
+            if (right.pulls !== left.pulls) {
+                return right.pulls - left.pulls;
+            }
+
+            return left.name.localeCompare(right.name);
+        });
 }
 
 function updatePlayerSocket(room: Room, player: Player, socketId: string) {
@@ -314,6 +450,68 @@ function buildRoundResults(room: Room) {
         }));
     }
 
+    if (room.gameType === "mathsprint") {
+        return [...room.players.values()]
+            .map((player) => ({
+                id: player.id,
+                name: player.name,
+                score: player.mathSprintState?.score ?? 0,
+                answeredCount: player.mathSprintState?.answeredCount ?? 0,
+                bestStreak: player.mathSprintState?.bestStreak ?? 0,
+                lastCorrectAt: player.mathSprintState?.lastCorrectAt ?? null,
+                rank: null as number | null,
+            }))
+            .sort((a, b) => {
+                if (b.score !== a.score) return b.score - a.score;
+                if (a.lastCorrectAt !== null && b.lastCorrectAt !== null) {
+                    return a.lastCorrectAt - b.lastCorrectAt;
+                }
+                if (a.lastCorrectAt !== null) return -1;
+                if (b.lastCorrectAt !== null) return 1;
+                if (b.answeredCount !== a.answeredCount) {
+                    return b.answeredCount - a.answeredCount;
+                }
+                if (b.bestStreak !== a.bestStreak) {
+                    return b.bestStreak - a.bestStreak;
+                }
+                return a.name.localeCompare(b.name);
+            })
+            .map((result, index) => ({ ...result, rank: index + 1 }));
+    }
+
+    if (room.gameType === "pairmatch") {
+        const ranked = [...room.players.values()]
+            .map((player) => ({
+                id: player.id,
+                name: player.name,
+                attempts: player.pairMatchState?.attempts ?? 0,
+                pairsFound: player.pairMatchState?.pairsFound ?? 0,
+                finishTime: player.pairMatchState?.finishTime ?? null,
+                solved: player.pairMatchState?.solved ?? false,
+                totalPairs: PAIR_MATCH_PAIR_COUNT,
+            }))
+            .sort((a, b) => {
+                if (a.solved !== b.solved) return a.solved ? -1 : 1;
+                if (a.solved && b.solved) {
+                    if (a.finishTime !== null && b.finishTime !== null) {
+                        return a.finishTime - b.finishTime;
+                    }
+                    if (a.finishTime !== null) return -1;
+                    if (b.finishTime !== null) return 1;
+                }
+                if (b.pairsFound !== a.pairsFound) {
+                    return b.pairsFound - a.pairsFound;
+                }
+                return a.attempts - b.attempts;
+            });
+
+        let nextRank = 1;
+        return ranked.map((entry) => ({
+            ...entry,
+            rank: entry.solved ? nextRank++ : null,
+        }));
+    }
+
     if (room.gameType === "pipeconnect") {
         return [...room.players.values()]
             .map((player) => ({
@@ -387,6 +585,94 @@ function buildRoundResults(room: Room) {
         }));
     }
 
+    if (room.gameType === "reactiontap") {
+        return [...room.players.values()]
+            .map((player) => ({
+                id: player.id,
+                name: player.name,
+                successfulPrompts:
+                    player.reactionTapState?.successfulPrompts ?? 0,
+                goPrompts: player.reactionTapState?.goPrompts ?? REACTION_TAP_GO_PROMPTS,
+                missedPrompts: player.reactionTapState?.missedPrompts ?? 0,
+                penalties: player.reactionTapState?.penalties ?? 0,
+                score: player.reactionTapState?.score ?? 0,
+                averageReactionTime:
+                    player.reactionTapState?.averageReactionTime ?? null,
+                bestReactionTime: player.reactionTapState?.bestReactionTime ?? null,
+                finishTime: player.reactionTapState?.finishTime ?? null,
+                rank: null as number | null,
+            }))
+            .sort((a, b) => {
+                if (b.score !== a.score) return b.score - a.score;
+                if (b.successfulPrompts !== a.successfulPrompts) {
+                    return b.successfulPrompts - a.successfulPrompts;
+                }
+                if (a.penalties !== b.penalties) {
+                    return a.penalties - b.penalties;
+                }
+                if (
+                    a.averageReactionTime !== null &&
+                    b.averageReactionTime !== null &&
+                    a.averageReactionTime !== b.averageReactionTime
+                ) {
+                    return a.averageReactionTime - b.averageReactionTime;
+                }
+                if (a.averageReactionTime !== null) return -1;
+                if (b.averageReactionTime !== null) return 1;
+                if (
+                    a.bestReactionTime !== null &&
+                    b.bestReactionTime !== null &&
+                    a.bestReactionTime !== b.bestReactionTime
+                ) {
+                    return a.bestReactionTime - b.bestReactionTime;
+                }
+                if (a.bestReactionTime !== null) return -1;
+                if (b.bestReactionTime !== null) return 1;
+                if (a.finishTime !== null && b.finishTime !== null) {
+                    return a.finishTime - b.finishTime;
+                }
+                if (a.finishTime !== null) return -1;
+                if (b.finishTime !== null) return 1;
+                return a.name.localeCompare(b.name);
+            })
+            .map((result, index) => ({ ...result, rank: index + 1 }));
+    }
+
+    if (room.gameType === "oddoneout") {
+        return [...room.players.values()]
+            .map((player) => ({
+                id: player.id,
+                name: player.name,
+                promptsCleared: player.oddOneOutState?.promptsCleared ?? 0,
+                totalPrompts: player.oddOneOutState?.prompts.length ?? 0,
+                score: player.oddOneOutState?.score ?? 0,
+                totalResponseTime: player.oddOneOutState?.totalResponseTime ?? 0,
+                penaltyCount: player.oddOneOutState?.penaltyCount ?? 0,
+                finishTime: player.oddOneOutState?.finishTime ?? null,
+                rank: null as number | null,
+            }))
+            .sort((a, b) => {
+                if (b.score !== a.score) return b.score - a.score;
+                if (b.promptsCleared !== a.promptsCleared) {
+                    return b.promptsCleared - a.promptsCleared;
+                }
+                if (a.totalResponseTime !== b.totalResponseTime) {
+                    return a.totalResponseTime - b.totalResponseTime;
+                }
+                if (a.finishTime !== null && b.finishTime !== null) {
+                    return a.finishTime - b.finishTime;
+                }
+                if (a.finishTime !== null) return -1;
+                if (b.finishTime !== null) return 1;
+                return a.name.localeCompare(b.name);
+            })
+            .map((result, index) => ({ ...result, rank: index + 1 }));
+    }
+
+    if (room.gameType === "teamtug") {
+        return buildTeamTugResults(room);
+    }
+
     return [...room.players.values()]
         .map((player) => ({
             id: player.id,
@@ -401,6 +687,163 @@ function buildRoundResults(room: Room) {
             if (b.rank !== null) return 1;
             return 0;
         });
+}
+
+function buildReactionTapSignalPayload(room: Room) {
+    const state = room.reactionTapRoomState;
+    const kind = state?.activeSignalKind ?? "idle";
+
+    return {
+        promptIndex: state?.activePromptIndex ?? -1,
+        totalPrompts: state?.prompts.length ?? REACTION_TAP_TOTAL_PROMPTS,
+        kind,
+        label: kind === "go" ? "TAP!" : kind === "decoy" ? "WAIT" : "Stand by",
+        activeUntil: state?.activeSignalEndsAt ?? null,
+        startedAt: state?.activeSignalStartedAt ?? null,
+    };
+}
+
+function buildReactionTapProgress(player: Player) {
+    if (!player.reactionTapState) return null;
+
+    return {
+        playerId: player.id,
+        promptsCompleted: player.reactionTapState.promptsCompleted,
+        totalPrompts: player.reactionTapState.totalPrompts,
+        goPrompts: player.reactionTapState.goPrompts,
+        successfulPrompts: player.reactionTapState.successfulPrompts,
+        missedPrompts: player.reactionTapState.missedPrompts,
+        penalties: player.reactionTapState.penalties,
+        score: player.reactionTapState.score,
+        averageReactionTime: player.reactionTapState.averageReactionTime,
+        bestReactionTime: player.reactionTapState.bestReactionTime,
+        latestReactionTime: player.reactionTapState.latestReactionTime,
+        latestOutcome: player.reactionTapState.latestOutcome,
+        done: player.reactionTapState.done,
+    };
+}
+
+function emitReactionTapState(room: Room, player: Player) {
+    const snapshot = buildReactionTapProgress(player);
+    if (!snapshot) return;
+
+    io.to(room.hostSocketId).emit("reactiontap:progress", snapshot);
+    io.to(player.id).emit("reactiontap:update", snapshot);
+}
+
+function emitAllReactionTapStates(room: Room) {
+    for (const player of room.players.values()) {
+        emitReactionTapState(room, player);
+    }
+}
+
+function clearReactionTapTimers(room: Room) {
+    if (!room.reactionTapRoomState) return;
+
+    for (const timeoutId of room.reactionTapRoomState.timeoutIds) {
+        clearTimeout(timeoutId);
+    }
+
+    room.reactionTapRoomState.timeoutIds = [];
+    room.reactionTapRoomState.activePromptIndex = null;
+    room.reactionTapRoomState.activeSignalKind = "idle";
+    room.reactionTapRoomState.activeSignalStartedAt = null;
+    room.reactionTapRoomState.activeSignalEndsAt = null;
+}
+
+function completeReactionTapRoundIfReady(room: Room) {
+    const allDone = [...room.players.values()].every(
+        (player) => player.reactionTapState?.done,
+    );
+
+    if (allDone) {
+        endGame(room.code);
+    }
+}
+
+function queueReactionTapPrompt(room: Room, promptIndex: number) {
+    const state = room.reactionTapRoomState;
+    const prompt = state?.prompts[promptIndex];
+
+    if (!state || !prompt) {
+        endGame(room.code);
+        return;
+    }
+
+    const timeoutId = setTimeout(() => {
+        startReactionTapPrompt(room.code, promptIndex);
+    }, prompt.delayMs);
+    state.timeoutIds.push(timeoutId);
+}
+
+function startReactionTapPrompt(roomCode: string, promptIndex: number) {
+    const room = getRoom(roomCode);
+    if (!room || room.phase !== "playing" || room.gameType !== "reactiontap") {
+        return;
+    }
+
+    const state = room.reactionTapRoomState;
+    const prompt = state?.prompts[promptIndex];
+    if (!state || !prompt) return;
+
+    state.activePromptIndex = promptIndex;
+    state.activeSignalKind = prompt.kind;
+    state.activeSignalStartedAt = Date.now();
+    state.activeSignalEndsAt = state.activeSignalStartedAt + prompt.durationMs;
+
+    io.to(room.code).emit("reactiontap:signal", buildReactionTapSignalPayload(room));
+
+    const timeoutId = setTimeout(() => {
+        resolveReactionTapPrompt(room.code, promptIndex);
+    }, prompt.durationMs);
+    state.timeoutIds.push(timeoutId);
+}
+
+function resolveReactionTapPrompt(roomCode: string, promptIndex: number) {
+    const room = getRoom(roomCode);
+    if (!room || room.phase !== "playing" || room.gameType !== "reactiontap") {
+        return;
+    }
+
+    const state = room.reactionTapRoomState;
+    const prompt = state?.prompts[promptIndex];
+    if (!state || !prompt) return;
+
+    const finishTime = Date.now() - state.roundStartedAt;
+
+    state.activePromptIndex = null;
+    state.activeSignalKind = "idle";
+    state.activeSignalStartedAt = null;
+    state.activeSignalEndsAt = null;
+
+    io.to(room.code).emit("reactiontap:signal", buildReactionTapSignalPayload(room));
+
+    for (const player of room.players.values()) {
+        if (!player.reactionTapState || player.reactionTapState.done) continue;
+        if (player.reactionTapState.promptsCompleted > promptIndex) continue;
+
+        const nextFinishTime =
+            player.reactionTapState.promptsCompleted + 1 >=
+            player.reactionTapState.totalPrompts
+                ? finishTime
+                : null;
+
+        player.reactionTapState =
+            prompt.kind === "go"
+                ? recordReactionTapMiss(player.reactionTapState, nextFinishTime)
+                : recordReactionTapDecoy(player.reactionTapState, nextFinishTime);
+        emitReactionTapState(room, player);
+    }
+
+    if (promptIndex >= state.prompts.length - 1) {
+        completeReactionTapRoundIfReady(room);
+        if (room.phase === "playing") {
+            endGame(room.code);
+        }
+        return;
+    }
+
+    queueReactionTapPrompt(room, promptIndex + 1);
 }
 
 function emitPlayerResumeState(
@@ -423,6 +866,7 @@ function emitPlayerResumeState(
     if (room.phase === "shuffling") {
         socket.emit("round:shuffle", {
             gameType: room.roundSequence[room.currentRound] ?? room.gameType,
+            availableGameTypes: getAvailableGameTypes(room.players.size),
             roundNumber: room.currentRound + 1,
             totalRounds: room.totalRounds,
             durationMs: Math.max(
@@ -440,15 +884,28 @@ function emitPlayerResumeState(
         const lastRoundPoints = new Map<string, number>();
         const playerCount = room.players.size;
 
-        for (const entry of results as Array<{
-            id: string;
-            rank?: number | null;
-        }>) {
-            const points =
-                entry.rank !== null && entry.rank !== undefined
-                    ? Math.max(playerCount - entry.rank + 1, 1)
-                    : 0;
-            lastRoundPoints.set(entry.id, points);
+        if (room.gameType === "teamtug") {
+            for (const entry of results as Array<{
+                rank: number;
+                members: Array<{ id: string }>;
+            }>) {
+                const points = Math.max(2 - entry.rank + 1, 1);
+
+                for (const member of entry.members) {
+                    lastRoundPoints.set(member.id, points);
+                }
+            }
+        } else {
+            for (const entry of results as Array<{
+                id: string;
+                rank?: number | null;
+            }>) {
+                const points =
+                    entry.rank !== null && entry.rank !== undefined
+                        ? Math.max(playerCount - entry.rank + 1, 1)
+                        : 0;
+                lastRoundPoints.set(entry.id, points);
+            }
         }
 
         socket.emit("game:over", {
@@ -579,6 +1036,68 @@ function emitPlayerResumeState(
         return;
     }
 
+    if (room.gameType === "mathsprint" && player.mathSprintState) {
+        socket.emit("game:started", {
+            ...basePayload,
+            durationMs: MATH_SPRINT_ROUND_DURATION_MS,
+            endAt: room.roundEndAt,
+            question: serializeMathSprintQuestion(player.mathSprintState),
+            score: player.mathSprintState.score,
+            answeredCount: player.mathSprintState.answeredCount,
+            streak: player.mathSprintState.streak,
+            bestStreak: player.mathSprintState.bestStreak,
+            lastAnswerCorrect: player.mathSprintState.lastAnswerCorrect,
+        });
+        return;
+    }
+
+    if (room.gameType === "oddoneout" && player.oddOneOutState) {
+        const oddOneOutState = player.oddOneOutState;
+        socket.emit("game:started", {
+            ...basePayload,
+            prompt: getCurrentOddOneOutPrompt(oddOneOutState),
+            promptCount: oddOneOutState.prompts.length,
+        });
+        setTimeout(() => {
+            socket.emit("oddoneout:update", {
+                prompt: getCurrentOddOneOutPrompt(oddOneOutState),
+                promptsCleared: oddOneOutState.promptsCleared,
+                totalPrompts: oddOneOutState.prompts.length,
+                score: oddOneOutState.score,
+                totalResponseTime: oddOneOutState.totalResponseTime,
+                penaltyCount: oddOneOutState.penaltyCount,
+                lockedOutUntil: oddOneOutState.lockedOutUntil,
+                done: oddOneOutState.done,
+                finishTime: oddOneOutState.finishTime,
+            });
+        }, 0);
+        return;
+    }
+
+    if (room.gameType === "reactiontap" && player.reactionTapState) {
+        socket.emit("game:started", {
+            ...basePayload,
+            totalPrompts: player.reactionTapState.totalPrompts,
+            goPrompts: player.reactionTapState.goPrompts,
+        });
+        setTimeout(() => {
+            const snapshot = buildReactionTapProgress(player);
+            if (snapshot) {
+                socket.emit("reactiontap:update", snapshot);
+            }
+            socket.emit("reactiontap:signal", buildReactionTapSignalPayload(room));
+        }, 0);
+        return;
+    }
+
+    if (room.gameType === "teamtug" && room.teamTugState) {
+        socket.emit("game:started", {
+            ...basePayload,
+            teamTugState: serializeTeamTugState(room),
+        });
+        return;
+    }
+
     if (room.gameType === "pipeconnect" && player.pipeConnectState) {
         socket.emit("game:started", {
             ...basePayload,
@@ -658,23 +1177,62 @@ function emitPlayerResumeState(
                 });
             }
         }, 0);
+        return;
+    }
+
+    if (room.gameType === "pairmatch" && player.pairMatchState) {
+        socket.emit("game:started", {
+            ...basePayload,
+            tiles: toPublicPairMatchTiles(player.pairMatchState.tiles),
+        });
+        setTimeout(() => {
+            socket.emit("pairmatch:update", {
+                tiles: toPublicPairMatchTiles(player.pairMatchState?.tiles ?? []),
+                attempts: player.pairMatchState?.attempts ?? 0,
+                pairsFound: player.pairMatchState?.pairsFound ?? 0,
+                totalPairs: PAIR_MATCH_PAIR_COUNT,
+                solved: player.pairMatchState?.solved ?? false,
+                done: player.pairMatchState?.done ?? false,
+                busy: player.pairMatchState?.busy ?? false,
+                finishTime: player.pairMatchState?.finishTime ?? null,
+            });
+            if (player.rank !== null && player.pairMatchState?.solved) {
+                socket.emit("pairmatch:solved", {
+                    rank: player.rank,
+                    attempts: player.pairMatchState.attempts,
+                    finishTime: player.pairMatchState.finishTime,
+                });
+            }
+        }, 0);
     }
 }
 
 function clearRoundState(room: Room) {
+    clearReactionTapTimers(room);
     room.gameStartTime = null;
     room.finishOrder = [];
     room.roundReadyPlayerSessionIds.clear();
     room.roundReadyOpensAt = null;
+    room.roundEndAt = null;
+    room.teamTugState = null;
+    room.reactionTapRoomState = null;
     for (const player of room.players.values()) {
         player.puzzleState = null;
         player.bowmanState = null;
         player.rushHourState = null;
         player.lightsOutState = null;
         player.codebreakerState = null;
+        player.mathSprintState = null;
+        if (player.pairMatchState?.mismatchTimeout) {
+            clearTimeout(player.pairMatchState.mismatchTimeout);
+        }
+        player.pairMatchState = null;
         player.pipeConnectState = null;
         player.simonCopyState = null;
         player.memorySequencePlusState = null;
+        player.oddOneOutState = null;
+        player.teamTugState = null;
+        player.reactionTapState = null;
         player.rank = null;
     }
 }
@@ -693,6 +1251,15 @@ function clearPendingResultsAdvance(room: Room) {
     }
 
     room.resultsAutoAdvanceAt = null;
+}
+
+function clearRoundEndTimeout(room: Room) {
+    if (room.roundEndTimeout) {
+        clearTimeout(room.roundEndTimeout);
+        room.roundEndTimeout = null;
+    }
+
+    room.roundEndAt = null;
 }
 
 function buildStandings(
@@ -723,6 +1290,7 @@ function startRound(room: Room, nextGameType?: GameType) {
     if (room.currentRound >= room.totalRounds) return;
 
     clearPendingResultsAdvance(room);
+    clearRoundEndTimeout(room);
     clearRoundState(room);
     room.phase = "playing";
     room.gameStartTime = Date.now();
@@ -792,6 +1360,51 @@ function startRound(room: Room, nextGameType?: GameType) {
             roundNumber: room.currentRound,
             totalRounds: room.totalRounds,
         });
+    } else if (room.gameType === "mathsprint") {
+        room.roundEndAt = Date.now() + MATH_SPRINT_ROUND_DURATION_MS;
+        const sharedStartTime = room.gameStartTime ?? Date.now();
+        io.to(room.hostSocketId).emit("game:started", {
+            gameType: "mathsprint",
+            durationMs: MATH_SPRINT_ROUND_DURATION_MS,
+            endAt: room.roundEndAt,
+            roundNumber: room.currentRound,
+            totalRounds: room.totalRounds,
+        });
+        for (const player of room.players.values()) {
+            player.mathSprintState = createMathSprintState(sharedStartTime);
+            io.to(room.hostSocketId).emit("mathsprint:progress", {
+                playerId: player.id,
+                score: 0,
+                answeredCount: 0,
+                streak: 0,
+                bestStreak: 0,
+                lastAnswerCorrect: null,
+                currentQuestion: serializeMathSprintQuestion(
+                    player.mathSprintState,
+                ),
+                done: false,
+                finishTime: null,
+            });
+            io.to(player.id).emit("game:started", {
+                gameType: "mathsprint",
+                durationMs: MATH_SPRINT_ROUND_DURATION_MS,
+                endAt: room.roundEndAt,
+                question: serializeMathSprintQuestion(player.mathSprintState),
+                score: 0,
+                answeredCount: 0,
+                streak: 0,
+                bestStreak: 0,
+                lastAnswerCorrect: null,
+                roundNumber: room.currentRound,
+                totalRounds: room.totalRounds,
+            });
+        }
+        room.roundEndTimeout = setTimeout(() => {
+            room.roundEndTimeout = null;
+
+            if (getRoom(room.code) !== room) return;
+            endGame(room.code);
+        }, MATH_SPRINT_ROUND_DURATION_MS);
     } else if (room.gameType === "pipeconnect") {
         const puzzleIndex = Math.floor(
             Math.random() * PIPE_CONNECT_PUZZLE_COUNT(),
@@ -837,6 +1450,90 @@ function startRound(room: Room, nextGameType?: GameType) {
             roundNumber: room.currentRound,
             totalRounds: room.totalRounds,
         });
+    } else if (room.gameType === "pairmatch") {
+        const initialState = createPairMatchState();
+        const layout = getPairMatchLayout(initialState);
+        for (const player of room.players.values()) {
+            player.pairMatchState = createPairMatchState(layout);
+        }
+        io.to(room.code).emit("game:started", {
+            gameType: "pairmatch",
+            tiles: toPublicPairMatchTiles(initialState.tiles),
+            roundNumber: room.currentRound,
+            totalRounds: room.totalRounds,
+        });
+    } else if (room.gameType === "oddoneout") {
+        const promptSet = createOddOneOutPromptSet();
+        for (const player of room.players.values()) {
+            player.oddOneOutState = createOddOneOutState(promptSet);
+        }
+        io.to(room.code).emit("game:started", {
+            gameType: "oddoneout",
+            prompt: promptSet[0] ?? null,
+            promptCount: promptSet.length,
+            roundNumber: room.currentRound,
+            totalRounds: room.totalRounds,
+        });
+        for (const player of room.players.values()) {
+            io.to(room.hostSocketId).emit("oddoneout:progress", {
+                playerId: player.id,
+                promptsCleared: 0,
+                totalPrompts: promptSet.length,
+                score: 0,
+                totalResponseTime: 0,
+                penaltyCount: 0,
+                lockedOutUntil: null,
+                done: false,
+                finishTime: null,
+                currentPrompt: promptSet[0] ?? null,
+            });
+        }
+    } else if (room.gameType === "reactiontap") {
+        room.reactionTapRoomState = createReactionTapRoomState();
+        for (const player of room.players.values()) {
+            player.reactionTapState = createReactionTapState();
+        }
+        io.to(room.code).emit("game:started", {
+            gameType: "reactiontap",
+            totalPrompts: REACTION_TAP_TOTAL_PROMPTS,
+            goPrompts: REACTION_TAP_GO_PROMPTS,
+            roundNumber: room.currentRound,
+            totalRounds: room.totalRounds,
+        });
+        io.to(room.code).emit("reactiontap:signal", buildReactionTapSignalPayload(room));
+        emitAllReactionTapStates(room);
+        queueReactionTapPrompt(room, 0);
+    } else if (room.gameType === "teamtug") {
+        room.teamTugState = createTeamTugState(
+            [...room.players.values()].map((player) => ({
+                sessionId: player.sessionId,
+            })),
+        );
+
+        for (const player of room.players.values()) {
+            player.teamTugState = room.teamTugState;
+        }
+
+        room.roundEndAt = Date.now() + room.teamTugState.timeLimitMs;
+        room.roundEndTimeout = setTimeout(() => {
+            room.roundEndTimeout = null;
+
+            if (getRoom(room.code) !== room) return;
+            if (room.phase !== "playing" || room.gameType !== "teamtug") return;
+            if (room.teamTugState) {
+                room.teamTugState.winnerTeamId = getLeadingTeamTugTeamId(
+                    room.teamTugState,
+                );
+            }
+            endGame(room.code);
+        }, room.teamTugState.timeLimitMs);
+
+        io.to(room.code).emit("game:started", {
+            gameType: "teamtug",
+            teamTugState: serializeTeamTugState(room),
+            roundNumber: room.currentRound,
+            totalRounds: room.totalRounds,
+        });
     }
 
     emitRoomSettings(room);
@@ -850,15 +1547,18 @@ function queueRoundStart(room: Room) {
 
     clearPendingRoundStart(room);
     clearPendingResultsAdvance(room);
+    clearRoundEndTimeout(room);
 
     const nextGameType = room.roundSequence[room.currentRound] ?? "klotski";
     const nextRoundNumber = room.currentRound + 1;
+    const availableGameTypes = getAvailableGameTypes(room.players.size);
 
     room.phase = "shuffling";
     room.roundReadyPlayerSessionIds.clear();
     room.roundReadyOpensAt = Date.now() + ROUND_SHUFFLE_DURATION_MS;
     io.to(room.code).emit("round:shuffle", {
         gameType: nextGameType,
+        availableGameTypes,
         roundNumber: nextRoundNumber,
         totalRounds: room.totalRounds,
         durationMs: ROUND_SHUFFLE_DURATION_MS,
@@ -916,9 +1616,14 @@ io.on("connection", (socket) => {
             gameType !== "rushhour" &&
             gameType !== "lightsout" &&
             gameType !== "codebreaker" &&
+            gameType !== "mathsprint" &&
             gameType !== "pipeconnect" &&
             gameType !== "simoncopy" &&
-            gameType !== "memorysequenceplus"
+            gameType !== "memorysequenceplus" &&
+            gameType !== "pairmatch" &&
+            gameType !== "oddoneout" &&
+            gameType !== "reactiontap" &&
+            gameType !== "teamtug"
         )
             return;
         room.gameType = gameType;
@@ -973,9 +1678,14 @@ io.on("connection", (socket) => {
                 rushHourState: null,
                 lightsOutState: null,
                 codebreakerState: null,
+                mathSprintState: null,
                 pipeConnectState: null,
                 simonCopyState: null,
                 memorySequencePlusState: null,
+                pairMatchState: null,
+                oddOneOutState: null,
+                teamTugState: null,
+                reactionTapState: null,
                 rank: null,
                 matchPoints: 0,
                 roundsWon: 0,
@@ -1033,7 +1743,10 @@ io.on("connection", (socket) => {
 
         room.totalRounds = sanitizeTotalRounds(room.totalRounds);
         room.currentRound = 0;
-        room.roundSequence = createRoundSequence(room.totalRounds);
+        room.roundSequence = createRoundSequence(
+            room.totalRounds,
+            room.players.size,
+        );
         for (const player of room.players.values()) {
             player.matchPoints = 0;
             player.roundsWon = 0;
@@ -1319,6 +2032,96 @@ io.on("connection", (socket) => {
         if (allDone) endGame(room.code);
     });
 
+    socket.on(
+        "mathsprint:answer",
+        ({
+            questionId,
+            answerIndex,
+        }: {
+            questionId: number;
+            answerIndex: number;
+        }) => {
+            const room = getRoomBySocket(socket.id);
+            if (
+                !room ||
+                room.phase !== "playing" ||
+                room.gameType !== "mathsprint"
+            ) {
+                return;
+            }
+
+            if (room.roundEndAt !== null && Date.now() > room.roundEndAt) {
+                return;
+            }
+
+            const player = getPlayerBySocket(room, socket.id);
+            if (!player?.mathSprintState || player.mathSprintState.done) return;
+
+            const { ok, state, correct } = submitMathSprintAnswer(
+                player.mathSprintState,
+                questionId,
+                answerIndex,
+            );
+            if (!ok) return;
+
+            player.mathSprintState = state;
+
+            socket.emit("mathsprint:update", {
+                question: serializeMathSprintQuestion(state),
+                score: state.score,
+                answeredCount: state.answeredCount,
+                streak: state.streak,
+                bestStreak: state.bestStreak,
+                lastAnswerCorrect: correct,
+            });
+
+            io.to(room.hostSocketId).emit("mathsprint:progress", {
+                playerId: socket.id,
+                score: state.score,
+                answeredCount: state.answeredCount,
+                streak: state.streak,
+                bestStreak: state.bestStreak,
+                lastAnswerCorrect: state.lastAnswerCorrect,
+                currentQuestion: serializeMathSprintQuestion(state),
+                done: false,
+                finishTime: null,
+            });
+        },
+    );
+
+    socket.on("teamtug:pull", () => {
+        const room = getRoomBySocket(socket.id);
+        if (!room || room.phase !== "playing" || room.gameType !== "teamtug") {
+            return;
+        }
+
+        const player = getPlayerBySocket(room, socket.id);
+        if (!player || !room.teamTugState) return;
+        if (room.roundEndAt !== null && Date.now() > room.roundEndAt) {
+            return;
+        }
+
+        const { ok, state, winnerTeamId } = applyTeamTugPull(
+            room.teamTugState,
+            player.sessionId,
+        );
+        if (!ok) return;
+
+        room.teamTugState = state;
+        player.teamTugState = state;
+
+        const snapshot = serializeTeamTugState(room);
+        if (!snapshot) return;
+
+        io.to(room.code).emit("teamtug:update", snapshot);
+
+        if (winnerTeamId) {
+            clearRoundEndTimeout(room);
+            room.teamTugState.winnerTeamId = winnerTeamId;
+            endGame(room.code);
+        }
+    });
+
     // ── Player rotates a Pipe Connect tile ───────────────────────
     socket.on("pipeconnect:rotate", ({ tileId }: { tileId: string }) => {
         const room = getRoomBySocket(socket.id);
@@ -1498,6 +2301,210 @@ io.on("connection", (socket) => {
         },
     );
 
+    socket.on("reactiontap:tap", () => {
+        const room = getRoomBySocket(socket.id);
+        if (!room || room.phase !== "playing" || room.gameType !== "reactiontap") {
+            return;
+        }
+
+        const player = getPlayerBySocket(room, socket.id);
+        const roundState = room.reactionTapRoomState;
+        if (!player?.reactionTapState || !roundState || player.reactionTapState.done) {
+            return;
+        }
+
+        const activePromptIndex = roundState.activePromptIndex;
+        const prompt =
+            activePromptIndex === null
+                ? null
+                : roundState.prompts[activePromptIndex] ?? null;
+        const canScoreSuccess =
+            prompt?.kind === "go" &&
+            activePromptIndex !== null &&
+            roundState.activeSignalStartedAt !== null &&
+            roundState.activeSignalEndsAt !== null &&
+            Date.now() <= roundState.activeSignalEndsAt &&
+            player.reactionTapState.promptsCompleted <= activePromptIndex;
+
+        if (canScoreSuccess) {
+            const reactionTime =
+                Date.now() - (roundState.activeSignalStartedAt ?? Date.now());
+            const finishTime =
+                player.reactionTapState.promptsCompleted + 1 >=
+                player.reactionTapState.totalPrompts
+                    ? Date.now() - roundState.roundStartedAt
+                    : null;
+            player.reactionTapState = recordReactionTapSuccess(
+                player.reactionTapState,
+                reactionTime,
+                finishTime,
+            );
+        } else {
+            player.reactionTapState = recordReactionTapPenalty(
+                player.reactionTapState,
+            );
+        }
+
+        emitReactionTapState(room, player);
+        completeReactionTapRoundIfReady(room);
+    });
+
+    // ── Player selects the odd item ────────────────────────────────
+    socket.on("oddoneout:select", ({ index }: { index: number }) => {
+        const room = getRoomBySocket(socket.id);
+        if (
+            !room ||
+            room.phase !== "playing" ||
+            room.gameType !== "oddoneout"
+        ) {
+            return;
+        }
+
+        const player = getPlayerBySocket(room, socket.id);
+        if (!player?.oddOneOutState || player.oddOneOutState.done) return;
+
+        const { ok, state } = processOddOneOutSelection(
+            player.oddOneOutState,
+            index,
+        );
+        if (!ok) return;
+
+        player.oddOneOutState = state;
+
+        const prompt = getCurrentOddOneOutPrompt(state);
+
+        socket.emit("oddoneout:update", {
+            prompt,
+            promptsCleared: state.promptsCleared,
+            totalPrompts: state.prompts.length,
+            score: state.score,
+            totalResponseTime: state.totalResponseTime,
+            penaltyCount: state.penaltyCount,
+            lockedOutUntil: state.lockedOutUntil,
+            done: state.done,
+            finishTime: state.finishTime,
+        });
+
+        io.to(room.hostSocketId).emit("oddoneout:progress", {
+            playerId: socket.id,
+            promptsCleared: state.promptsCleared,
+            totalPrompts: state.prompts.length,
+            score: state.score,
+            totalResponseTime: state.totalResponseTime,
+            penaltyCount: state.penaltyCount,
+            lockedOutUntil: state.lockedOutUntil,
+            done: state.done,
+            finishTime: state.finishTime,
+            currentPrompt: prompt,
+        });
+
+        const allDone = [...room.players.values()].every(
+            (candidate) => candidate.oddOneOutState?.done,
+        );
+        if (allDone) endGame(room.code);
+    });
+
+    socket.on("pairmatch:flip", ({ tileId }: { tileId: string }) => {
+        const room = getRoomBySocket(socket.id);
+        if (!room || room.phase !== "playing" || room.gameType !== "pairmatch") {
+            return;
+        }
+
+        const player = getPlayerBySocket(room, socket.id);
+        if (!player?.pairMatchState || player.pairMatchState.done) return;
+
+        const { ok, state } = flipPairMatchTile(player.pairMatchState, tileId);
+        if (!ok) return;
+
+        player.pairMatchState = state;
+
+        socket.emit("pairmatch:update", {
+            tiles: toPublicPairMatchTiles(state.tiles),
+            attempts: state.attempts,
+            pairsFound: state.pairsFound,
+            totalPairs: PAIR_MATCH_PAIR_COUNT,
+            solved: state.solved,
+            done: state.done,
+            busy: state.busy,
+            finishTime: state.finishTime,
+        });
+
+        let rank: number | null = null;
+        if (state.solved) {
+            if (!room.finishOrder.includes(player.id)) {
+                room.finishOrder.push(player.id);
+            }
+            rank = room.finishOrder.indexOf(player.id) + 1;
+            player.rank = rank;
+            socket.emit("pairmatch:solved", {
+                rank,
+                attempts: state.attempts,
+                finishTime: state.finishTime,
+            });
+        }
+
+        io.to(room.hostSocketId).emit("pairmatch:progress", {
+            playerId: player.id,
+            attempts: state.attempts,
+            pairsFound: state.pairsFound,
+            totalPairs: PAIR_MATCH_PAIR_COUNT,
+            solved: state.solved,
+            done: state.done,
+            busy: state.busy,
+            rank,
+            finishTime: state.finishTime,
+            tiles: toPublicPairMatchTiles(state.tiles),
+        });
+
+        if (state.busy) {
+            if (state.mismatchTimeout) {
+                clearTimeout(state.mismatchTimeout);
+            }
+
+            state.mismatchTimeout = setTimeout(() => {
+                const currentRoom = getRoom(room.code);
+                if (!currentRoom || currentRoom.phase !== "playing") return;
+                if (currentRoom.gameType !== "pairmatch") return;
+
+                const currentPlayer = currentRoom.players.get(player.sessionId);
+                if (!currentPlayer?.pairMatchState?.busy) return;
+
+                currentPlayer.pairMatchState = clearPairMatchMismatch(
+                    currentPlayer.pairMatchState,
+                );
+
+                io.to(currentPlayer.id).emit("pairmatch:update", {
+                    tiles: toPublicPairMatchTiles(currentPlayer.pairMatchState.tiles),
+                    attempts: currentPlayer.pairMatchState.attempts,
+                    pairsFound: currentPlayer.pairMatchState.pairsFound,
+                    totalPairs: PAIR_MATCH_PAIR_COUNT,
+                    solved: currentPlayer.pairMatchState.solved,
+                    done: currentPlayer.pairMatchState.done,
+                    busy: currentPlayer.pairMatchState.busy,
+                    finishTime: currentPlayer.pairMatchState.finishTime,
+                });
+
+                io.to(currentRoom.hostSocketId).emit("pairmatch:progress", {
+                    playerId: currentPlayer.id,
+                    attempts: currentPlayer.pairMatchState.attempts,
+                    pairsFound: currentPlayer.pairMatchState.pairsFound,
+                    totalPairs: PAIR_MATCH_PAIR_COUNT,
+                    solved: currentPlayer.pairMatchState.solved,
+                    done: currentPlayer.pairMatchState.done,
+                    busy: currentPlayer.pairMatchState.busy,
+                    rank: currentPlayer.rank,
+                    finishTime: currentPlayer.pairMatchState.finishTime,
+                    tiles: toPublicPairMatchTiles(currentPlayer.pairMatchState.tiles),
+                });
+            }, PAIR_MATCH_MISMATCH_REVEAL_MS);
+        }
+
+        const allSolved = [...room.players.values()].every(
+            (entry) => entry.pairMatchState?.solved,
+        );
+        if (allSolved) endGame(room.code);
+    });
+
     // ── Host ends the round early ───────────────────────────────────
     socket.on("host:end", () => {
         const room = getRoomBySocket(socket.id);
@@ -1523,6 +2530,7 @@ io.on("connection", (socket) => {
 
         clearPendingRoundStart(room);
         clearPendingResultsAdvance(room);
+        clearRoundEndTimeout(room);
         room.phase = "lobby";
         room.currentRound = 0;
         room.roundSequence = [];
@@ -1547,6 +2555,8 @@ io.on("connection", (socket) => {
         if (room.hostSocketId === socket.id) {
             clearPendingRoundStart(room);
             clearPendingResultsAdvance(room);
+            clearRoundEndTimeout(room);
+            clearReactionTapTimers(room);
             io.to(room.code).emit("error", { message: "Host disconnected." });
             deleteRoom(room.code);
         } else {
@@ -1582,30 +2592,66 @@ function endGame(roomCode: string) {
     if (!room) return;
     if (room.phase !== "playing") return;
     clearPendingResultsAdvance(room);
+    clearRoundEndTimeout(room);
+    clearReactionTapTimers(room);
     room.phase = "results";
+
+    if (room.gameType === "mathsprint") {
+        for (const player of room.players.values()) {
+            if (player.mathSprintState) {
+                player.mathSprintState = finishMathSprintState(
+                    player.mathSprintState,
+                );
+            }
+        }
+    }
 
     const results = buildRoundResults(room);
 
     const lastRoundPoints = new Map<string, number>();
     const playerCount = room.players.size;
+    if (room.gameType === "teamtug") {
+        const winningTeamCount = (results as Array<{ winner: boolean }>).filter(
+            (entry) => entry.winner,
+        ).length;
 
-    for (const entry of results as Array<{
-        id: string;
-        rank?: number | null;
-    }>) {
-        const player = getPlayerById(room, entry.id);
-        if (!player) continue;
+        for (const entry of results as Array<{
+            rank: number;
+            winner: boolean;
+            members: Array<{ sessionId: string }>;
+        }>) {
+            const points = Math.max(2 - entry.rank + 1, 1);
 
-        const points =
-            entry.rank !== null && entry.rank !== undefined
-                ? Math.max(playerCount - entry.rank + 1, 1)
-                : 0;
+            for (const member of entry.members) {
+                const player = room.players.get(member.sessionId);
+                if (!player) continue;
 
-        player.matchPoints += points;
-        if (entry.rank === 1) {
-            player.roundsWon += 1;
+                player.matchPoints += points;
+                if (entry.winner && winningTeamCount === 1) {
+                    player.roundsWon += 1;
+                }
+                lastRoundPoints.set(player.id, points);
+            }
         }
-        lastRoundPoints.set(entry.id, points);
+    } else {
+        for (const entry of results as Array<{
+            id: string;
+            rank?: number | null;
+        }>) {
+            const player = getPlayerById(room, entry.id);
+            if (!player) continue;
+
+            const points =
+                entry.rank !== null && entry.rank !== undefined
+                    ? Math.max(playerCount - entry.rank + 1, 1)
+                    : 0;
+
+            player.matchPoints += points;
+            if (entry.rank === 1) {
+                player.roundsWon += 1;
+            }
+            lastRoundPoints.set(entry.id, points);
+        }
     }
 
     const standings = buildStandings(room, lastRoundPoints);

@@ -34,6 +34,10 @@ export function createRoom(hostSocketId: string): Room {
         roundRevealTimeout: null,
         resultsAutoAdvanceAt: null,
         resultsAutoAdvanceTimeout: null,
+        roundEndAt: null,
+        roundEndTimeout: null,
+        teamTugState: null,
+        reactionTapRoomState: null,
     };
     rooms.set(code, room);
     return room;

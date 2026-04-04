@@ -1,0 +1,73 @@
+.card {
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 0.85rem;
+  padding: 0.85rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+
+.header,
+.stats {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.name {
+  color: #fff;
+  font-weight: 600;
+}
+
+.good,
+.bad {
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.good {
+  color: #2ecc71;
+}
+
+.bad {
+  color: #ff7b72;
+}
+
+.scoreRow {
+  display: flex;
+  align-items: baseline;
+  gap: 0.35rem;
+}
+
+.score {
+  color: #ffd700;
+  font-size: 2rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.scoreLabel,
+.stats,
+.waiting {
+  color: rgba(255,255,255,0.6);
+  font-size: 0.8rem;
+}
+
+.question {
+  min-height: 2.8rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.7rem;
+  border-radius: 0.75rem;
+  background: rgba(255,255,255,0.04);
+  color: #fff;
+  font-weight: 700;
+  text-align: center;
+}
+
+.stats {
+  flex-wrap: wrap;
+}
