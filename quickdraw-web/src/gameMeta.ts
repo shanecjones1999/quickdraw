@@ -3,7 +3,7 @@ import type { GameType } from "./types";
 export interface GameInstructionMeta {
     label: string;
     shortLabel: string;
-    category: "logic" | "speed" | "memory" | "precision";
+    category: "logic" | "speed" | "memory" | "precision" | "reaction";
     objective: string;
     controls: string;
     winCondition: string;
@@ -13,11 +13,16 @@ export const ALL_GAME_TYPES: GameType[] = [
     "klotski",
     "bowman",
     "codebreaker",
+    "mathsprint",
     "pipeconnect",
     "simoncopy",
     "memorysequenceplus",
+    "oddoneout",
+    "pairmatch",
+    "reactiontap",
     "rushhour",
     "lightsout",
+    "teamtug",
 ];
 
 export const GAME_INSTRUCTION_META: Record<GameType, GameInstructionMeta> = {
@@ -46,6 +51,14 @@ export const GAME_INSTRUCTION_META: Record<GameType, GameInstructionMeta> = {
         controls: "Build a guess from the color palette, then submit it.",
         winCondition: "Solve in the fewest guesses, then the fastest time.",
     },
+    mathsprint: {
+        label: "🧮 Math Sprint",
+        shortLabel: "Math Sprint",
+        category: "speed",
+        objective: "Rip through quick-fire math questions before time runs out.",
+        controls: "Tap the correct answer from the four choices as fast as you can.",
+        winCondition: "Highest score wins; fastest last correct answer breaks ties.",
+    },
     pipeconnect: {
         label: "🪠 Pipe Connect",
         shortLabel: "Pipe Connect",
@@ -72,6 +85,31 @@ export const GAME_INSTRUCTION_META: Record<GameType, GameInstructionMeta> = {
         winCondition:
             "Reach the highest round; fastest perfect clear wins ties.",
     },
+    oddoneout: {
+        label: "🟣 Odd One Out",
+        shortLabel: "Odd One Out",
+        category: "speed",
+        objective: "Spot the single symbol that looks different in each grid.",
+        controls: "Tap the odd item fast — wrong taps trigger a short lockout.",
+        winCondition:
+            "Highest score wins after all prompts; fastest total response time breaks ties.",
+    },
+    pairmatch: {
+        label: "🃏 Pair Match",
+        shortLabel: "Pair Match",
+        category: "memory",
+        objective: "Flip two tiles at a time and remember where every pair is hiding.",
+        controls: "Tap tiles to reveal them and clear matching pairs from the grid.",
+        winCondition: "Fastest player to clear the whole board wins.",
+    },
+    reactiontap: {
+        label: "⚡ Reaction Tap",
+        shortLabel: "Reaction Tap",
+        category: "reaction",
+        objective: "Tap instantly when TAP! appears and stay still on every WAIT decoy.",
+        controls: "Keep your thumb ready, then tap only on real go signals.",
+        winCondition: "Best score wins: more hits first, then fewer penalties, then faster reactions.",
+    },
     rushhour: {
         label: "🚗 Rush Hour",
         shortLabel: "Rush Hour",
@@ -87,6 +125,14 @@ export const GAME_INSTRUCTION_META: Record<GameType, GameInstructionMeta> = {
         objective: "Turn every light off on the board.",
         controls: "Tap a tile to flip it and its neighbors.",
         winCondition: "Fastest clean solve wins.",
+    },
+    teamtug: {
+        label: "🪢 Team Tug of War",
+        shortLabel: "Team Tug of War",
+        category: "speed",
+        objective: "Hammer the pull button with your team to drag the marker to your side.",
+        controls: "Tap PULL as fast as you can while watching the shared tug bar.",
+        winCondition: "First team across wins, or the leading team wins when time runs out.",
     },
 };
 

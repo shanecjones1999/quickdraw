@@ -9,7 +9,11 @@ import { PlayerCard } from "../components/PlayerCard";
 import { BowmanPlayerCard } from "../components/BowmanPlayerCard";
 import { CodebreakerPlayerCard } from "../components/CodebreakerPlayerCard";
 import { LightsOutPlayerCard } from "../components/LightsOutPlayerCard";
+import { MathSprintPlayerCard } from "../components/MathSprintPlayerCard";
 import { MemorySequencePlusPlayerCard } from "../components/MemorySequencePlusPlayerCard";
+import { OddOneOutPlayerCard } from "../components/OddOneOutPlayerCard";
+import { PairMatchPlayerCard } from "../components/PairMatchPlayerCard";
+import { ReactionTapPlayerCard } from "../components/ReactionTapPlayerCard";
 import { PipeConnectPlayerCard } from "../components/PipeConnectPlayerCard";
 import { RushHourPlayerCard } from "../components/RushHourPlayerCard";
 import { SimonCopyPlayerCard } from "../components/SimonCopyPlayerCard";
@@ -28,8 +32,16 @@ import type {
     GameOverPayload,
     LightsOutProgressSnapshot,
     LightsOutResult,
+    MathSprintProgressSnapshot,
+    MathSprintResult,
     MemorySequencePlusProgressSnapshot,
     MemorySequencePlusResult,
+    OddOneOutProgressSnapshot,
+    OddOneOutResult,
+    PairMatchProgressSnapshot,
+    PairMatchResult,
+    ReactionTapProgressSnapshot,
+    ReactionTapResult,
     PipeConnectProgressSnapshot,
     PipeConnectResult,
     RoundReadyStatusPayload,
@@ -38,6 +50,8 @@ import type {
     RushHourResult,
     SimonCopyProgressSnapshot,
     SimonCopyResult,
+    TeamTugStateSnapshot,
+    TeamTugTeamResult,
 } from "../types";
 import styles from "../styles/Host.module.css";
 
@@ -97,6 +111,9 @@ export function Host({ roomCode }: Props) {
     const [lightsOutProg, setLightsOutProg] = useState<
         Map<string, LightsOutProgressSnapshot>
     >(new Map());
+    const [mathSprintProg, setMathSprintProg] = useState<
+        Map<string, MathSprintProgressSnapshot>
+    >(new Map());
     const [pipeConnectProg, setPipeConnectProg] = useState<
         Map<string, PipeConnectProgressSnapshot>
     >(new Map());
@@ -106,12 +123,24 @@ export function Host({ roomCode }: Props) {
     const [memorySequencePlusProg, setMemorySequencePlusProg] = useState<
         Map<string, MemorySequencePlusProgressSnapshot>
     >(new Map());
+    const [oddOneOutProg, setOddOneOutProg] = useState<
+        Map<string, OddOneOutProgressSnapshot>
+    >(new Map());
+    const [pairMatchProg, setPairMatchProg] = useState<
+        Map<string, PairMatchProgressSnapshot>
+    >(new Map());
+    const [reactionTapProg, setReactionTapProg] = useState<
+        Map<string, ReactionTapProgressSnapshot>
+    >(new Map());
     const [results, setResults] = useState<Result[]>([]);
     const [bowmanResults, setBowmanResults] = useState<BowmanResult[]>([]);
     const [codebreakerResults, setCodebreakerResults] = useState<
         CodebreakerResult[]
     >([]);
     const [lightsOutResults, setLightsOutResults] = useState<LightsOutResult[]>(
+        [],
+    );
+    const [mathSprintResults, setMathSprintResults] = useState<MathSprintResult[]>(
         [],
     );
     const [pipeConnectResults, setPipeConnectResults] = useState<
@@ -123,13 +152,28 @@ export function Host({ roomCode }: Props) {
     const [memorySequencePlusResults, setMemorySequencePlusResults] = useState<
         MemorySequencePlusResult[]
     >([]);
+    const [oddOneOutResults, setOddOneOutResults] = useState<OddOneOutResult[]>(
+        [],
+    );
+    const [pairMatchResults, setPairMatchResults] = useState<PairMatchResult[]>(
+        [],
+    );
+    const [reactionTapResults, setReactionTapResults] = useState<
+        ReactionTapResult[]
+    >([]);
     const [rushHourProg, setRushHourProg] = useState<
         Map<string, RushHourProgressSnapshot>
     >(new Map());
     const [rushHourResults, setRushHourResults] = useState<RushHourResult[]>(
         [],
     );
+    const [teamTugState, setTeamTugState] =
+        useState<TeamTugStateSnapshot | null>(null);
+    const [teamTugResults, setTeamTugResults] = useState<TeamTugTeamResult[]>([]);
     const [gameStartTime, setGameStartTime] = useState<number | null>(null);
+    const [mathSprintDurationMs, setMathSprintDurationMs] = useState<number | null>(
+        null,
+    );
     const [shuffleState, setShuffleState] = useState<ShuffleState | null>(null);
     const [shuffleReadyState, setShuffleReadyState] =
         useState<ShuffleReadyState | null>(null);
@@ -151,6 +195,8 @@ export function Host({ roomCode }: Props) {
             ? getTopName(bowmanResults)
             : gameType === "codebreaker"
               ? getTopName(codebreakerResults)
+              : gameType === "mathsprint"
+                ? getTopName(mathSprintResults)
               : gameType === "lightsout"
                 ? getTopName(lightsOutResults)
                 : gameType === "pipeconnect"
@@ -159,9 +205,17 @@ export function Host({ roomCode }: Props) {
                     ? getTopName(simonCopyResults)
                     : gameType === "memorysequenceplus"
                       ? getTopName(memorySequencePlusResults)
-                      : gameType === "rushhour"
-                        ? getTopName(rushHourResults)
-                        : getTopName(results);
+                      : gameType === "oddoneout"
+                        ? getTopName(oddOneOutResults)
+                       : gameType === "pairmatch"
+                         ? getTopName(pairMatchResults)
+                         : gameType === "reactiontap"
+                           ? getTopName(reactionTapResults)
+                       : gameType === "rushhour"
+                         ? getTopName(rushHourResults)
+                         : gameType === "teamtug"
+                           ? getTopName(teamTugResults)
+                           : getTopName(results);
     const leaderName =
         standings.find((standing) => standing.position === 1)?.name ?? null;
     const resultsCountdownSeconds =
@@ -171,8 +225,15 @@ export function Host({ roomCode }: Props) {
                   0,
                   Math.ceil(
                       (resultsAutoAdvanceAt - resultsCountdownNow) / 1000,
-                  ),
-              );
+                   ),
+               );
+    const timerLabel =
+        gameType === "mathsprint" && phase === "playing"
+            ? formatTime(Math.max((mathSprintDurationMs ?? 0) - now, 0))
+            : gameType === "teamtug" && phase === "playing"
+              ? `${Math.max(((teamTugState?.timeLimitMs ?? 0) - now) / 1000, 0).toFixed(1)}s`
+              : formatTime(now);
+    void reactionTapResults.length;
 
     useEffect(() => {
         if (phase !== "results" || resultsAutoAdvanceAt === null || matchOver) {
@@ -214,10 +275,14 @@ export function Host({ roomCode }: Props) {
             gameType: gt,
             roundNumber,
             totalRounds: nextTotalRounds,
+            durationMs,
+            teamTugState: nextTeamTugState,
         }: {
             gameType: GameType;
             roundNumber: number;
             totalRounds: number;
+            durationMs?: number;
+            teamTugState?: TeamTugStateSnapshot | null;
         }) => {
             setShuffleState(null);
             setResultsAutoAdvanceAt(null);
@@ -231,10 +296,19 @@ export function Host({ roomCode }: Props) {
             setBowmanProg(new Map());
             setCodebreakerProg(new Map());
             setLightsOutProg(new Map());
+            setMathSprintProg(new Map());
             setPipeConnectProg(new Map());
             setSimonCopyProg(new Map());
             setMemorySequencePlusProg(new Map());
+            setOddOneOutProg(new Map());
+            setPairMatchProg(new Map());
+            setReactionTapProg(new Map());
             setRushHourProg(new Map());
+            setTeamTugState(gt === "teamtug" ? nextTeamTugState ?? null : null);
+            setTeamTugResults([]);
+            setMathSprintDurationMs(
+                gt === "mathsprint" ? durationMs ?? null : null,
+            );
             setGameStartTime(Date.now());
         },
         [],
@@ -252,6 +326,7 @@ export function Host({ roomCode }: Props) {
             setCurrentRound(roundNumber);
             setTotalRounds(nextTotalRounds);
             setGameStartTime(null);
+            setMathSprintDurationMs(null);
             setMatchOver(false);
             setPhase("shuffling");
             setResultsAutoAdvanceAt(null);
@@ -310,6 +385,13 @@ export function Host({ roomCode }: Props) {
         [],
     );
 
+    const onMathSprintProgress = useCallback(
+        (snap: MathSprintProgressSnapshot) => {
+            setMathSprintProg((prev) => new Map(prev).set(snap.playerId, snap));
+        },
+        [],
+    );
+
     const onPipeConnectProgress = useCallback(
         (snap: PipeConnectProgressSnapshot) => {
             setPipeConnectProg((prev) =>
@@ -335,9 +417,31 @@ export function Host({ roomCode }: Props) {
         [],
     );
 
+    const onOddOneOutProgress = useCallback(
+        (snap: OddOneOutProgressSnapshot) => {
+            setOddOneOutProg((prev) => new Map(prev).set(snap.playerId, snap));
+        },
+        [],
+    );
+
     const onRushHourProgress = useCallback((snap: RushHourProgressSnapshot) => {
         setRushHourProg((prev) => new Map(prev).set(snap.playerId, snap));
     }, []);
+
+    const onTeamTugUpdate = useCallback((snap: TeamTugStateSnapshot) => {
+        setTeamTugState(snap);
+    }, []);
+
+    const onPairMatchProgress = useCallback((snap: PairMatchProgressSnapshot) => {
+        setPairMatchProg((prev) => new Map(prev).set(snap.playerId, snap));
+    }, []);
+
+    const onReactionTapProgress = useCallback(
+        (snap: ReactionTapProgressSnapshot) => {
+            setReactionTapProg((prev) => new Map(prev).set(snap.playerId, snap));
+        },
+        [],
+    );
 
     const onGameOver = useCallback(
         ({
@@ -358,14 +462,23 @@ export function Host({ roomCode }: Props) {
             setStandings(nextStandings);
             setResultsAutoAdvanceAt(autoAdvanceAt);
             setResultsCountdownNow(Date.now());
+            setMathSprintDurationMs(null);
             if (gt === "bowman") setBowmanResults(r);
             else if (gt === "codebreaker") setCodebreakerResults(r);
+            else if (gt === "mathsprint") setMathSprintResults(r);
             else if (gt === "lightsout") setLightsOutResults(r);
             else if (gt === "pipeconnect") setPipeConnectResults(r);
             else if (gt === "simoncopy") setSimonCopyResults(r);
             else if (gt === "memorysequenceplus") {
                 setMemorySequencePlusResults(r);
+            } else if (gt === "oddoneout") {
+                setOddOneOutResults(r);
+            } else if (gt === "pairmatch") {
+                setPairMatchResults(r);
+            } else if (gt === "reactiontap") {
+                setReactionTapResults(r);
             } else if (gt === "rushhour") setRushHourResults(r);
+            else if (gt === "teamtug") setTeamTugResults(r);
             else setResults(r);
             setGameStartTime(null);
         },
@@ -384,18 +497,29 @@ export function Host({ roomCode }: Props) {
         setBowmanProg(new Map());
         setCodebreakerProg(new Map());
         setLightsOutProg(new Map());
+        setOddOneOutProg(new Map());
         setPipeConnectProg(new Map());
         setSimonCopyProg(new Map());
         setMemorySequencePlusProg(new Map());
+        setPairMatchProg(new Map());
+        setReactionTapProg(new Map());
         setRushHourProg(new Map());
+        setMathSprintProg(new Map());
+        setTeamTugState(null);
+        setTeamTugResults([]);
         setResults([]);
         setBowmanResults([]);
         setCodebreakerResults([]);
+        setMathSprintResults([]);
         setLightsOutResults([]);
+        setOddOneOutResults([]);
         setPipeConnectResults([]);
         setSimonCopyResults([]);
         setMemorySequencePlusResults([]);
+        setPairMatchResults([]);
+        setReactionTapResults([]);
         setRushHourResults([]);
+        setMathSprintDurationMs(null);
         setGameStartTime(null);
     }, []);
 
@@ -408,13 +532,18 @@ export function Host({ roomCode }: Props) {
     useSocket("bowman:progress", onBowmanProgress as never);
     useSocket("codebreaker:progress", onCodebreakerProgress as never);
     useSocket("lightsout:progress", onLightsOutProgress as never);
+    useSocket("mathsprint:progress", onMathSprintProgress as never);
+    useSocket("oddoneout:progress", onOddOneOutProgress as never);
     useSocket("pipeconnect:progress", onPipeConnectProgress as never);
     useSocket("simoncopy:progress", onSimonCopyProgress as never);
     useSocket(
         "memorysequenceplus:progress",
         onMemorySequencePlusProgress as never,
     );
+    useSocket("pairmatch:progress", onPairMatchProgress as never);
+    useSocket("reactiontap:progress", onReactionTapProgress as never);
     useSocket("rushhour:progress", onRushHourProgress as never);
+    useSocket("teamtug:update", onTeamTugUpdate as never);
     useSocket("game:over", onGameOver as never);
     useSocket("game:reset", onGameReset as never);
 
@@ -438,6 +567,33 @@ export function Host({ roomCode }: Props) {
     }
     function resetGame() {
         socket.emit("host:reset");
+    }
+
+    function renderReactionTapCard(playerId: string, name: string) {
+        return (
+            <ReactionTapPlayerCard
+                key={playerId}
+                name={name}
+                snapshot={reactionTapProg.get(playerId) ?? null}
+            />
+        );
+    }
+
+    function renderReactionTapResults() {
+        return reactionTapResults.map((result) => (
+            <div key={result.id} className={styles.bowmanResultRow}>
+                <span className={styles.bowmanResultRank}>
+                    {result.rank !== null && result.rank <= 3
+                        ? MEDALS[result.rank - 1]
+                        : (result.rank ?? "—")}
+                </span>
+                <span className={styles.bowmanResultName}>{result.name}</span>
+                <span className={styles.bowmanResultScore}>
+                    {result.score} pts · {result.successfulPrompts}/
+                    {result.goPrompts} hits
+                </span>
+            </div>
+        ));
     }
 
     return (
@@ -593,7 +749,7 @@ export function Host({ roomCode }: Props) {
                                 </div>
                             </div>
                             <div className={styles.timer}>
-                                {formatTime(now)}
+                                {timerLabel}
                             </div>
                             <button
                                 type="button"
@@ -603,73 +759,148 @@ export function Host({ roomCode }: Props) {
                                 End Round
                             </button>
                         </div>
-                        <div className={styles.grid}>
-                            {players.map((p) =>
-                                gameType === "bowman" ? (
-                                    <BowmanPlayerCard
-                                        key={p.id}
-                                        name={p.name}
-                                        snapshot={bowmanProg.get(p.id) ?? null}
-                                    />
-                                ) : gameType === "codebreaker" ? (
-                                    <CodebreakerPlayerCard
-                                        key={p.id}
-                                        name={p.name}
-                                        snapshot={
-                                            codebreakerProg.get(p.id) ?? null
-                                        }
-                                    />
-                                ) : gameType === "lightsout" ? (
-                                    <LightsOutPlayerCard
-                                        key={p.id}
-                                        name={p.name}
-                                        snapshot={
-                                            lightsOutProg.get(p.id) ?? null
-                                        }
-                                    />
-                                ) : gameType === "pipeconnect" ? (
-                                    <PipeConnectPlayerCard
-                                        key={p.id}
-                                        name={p.name}
-                                        snapshot={
-                                            pipeConnectProg.get(p.id) ?? null
-                                        }
-                                    />
-                                ) : gameType === "simoncopy" ? (
-                                    <SimonCopyPlayerCard
-                                        key={p.id}
-                                        name={p.name}
-                                        snapshot={
-                                            simonCopyProg.get(p.id) ?? null
-                                        }
-                                    />
-                                ) : gameType === "memorysequenceplus" ? (
-                                    <MemorySequencePlusPlayerCard
-                                        key={p.id}
-                                        name={p.name}
-                                        snapshot={
-                                            memorySequencePlusProg.get(p.id) ??
-                                            null
-                                        }
-                                    />
-                                ) : gameType === "rushhour" ? (
-                                    <RushHourPlayerCard
-                                        key={p.id}
-                                        name={p.name}
-                                        snapshot={
-                                            rushHourProg.get(p.id) ?? null
-                                        }
-                                    />
-                                ) : (
-                                    <PlayerCard
-                                        key={p.id}
-                                        name={p.name}
-                                        snapshot={progress.get(p.id) ?? null}
-                                        elapsedMs={now}
-                                    />
-                                ),
-                            )}
-                        </div>
+                        {gameType === "teamtug" && teamTugState ? (
+                            <div className={styles.tugLayout}>
+                                <div className={styles.tugArena}>
+                                    <div className={styles.tugArenaHeader}>
+                                        <div>
+                                            <div className={styles.tugEyebrow}>
+                                                Shared bar
+                                            </div>
+                                            <div className={styles.tugTitle}>
+                                                Team Tug of War
+                                            </div>
+                                        </div>
+                                        <div className={styles.tugLead}>
+                                            {teamTugState.markerPosition === 0
+                                                ? "Dead even"
+                                                : `${teamTugState.markerPosition < 0 ? teamTugState.teams[0]?.name : teamTugState.teams[1]?.name} leading`}
+                                        </div>
+                                    </div>
+                                    <div className={styles.tugTrack}>
+                                        <div className={styles.tugFinishLeft} />
+                                        <div className={styles.tugFinishRight} />
+                                        <div className={styles.tugCenterLine} />
+                                        <div
+                                            className={styles.tugMarker}
+                                            style={{
+                                                left: `${((teamTugState.markerPosition + teamTugState.finishLine) / (teamTugState.finishLine * 2)) * 100}%`,
+                                            }}
+                                        />
+                                    </div>
+                                </div>
+                                <div className={styles.tugTeams}>
+                                    {teamTugState.teams.map((team) => (
+                                        <div key={team.id} className={styles.tugTeamCard}>
+                                            <div className={styles.tugTeamHeader}>
+                                                <span className={styles.tugTeamName}>
+                                                    {team.name}
+                                                </span>
+                                                <span className={styles.tugTeamScore}>
+                                                    {team.totalPulls} pulls
+                                                </span>
+                                            </div>
+                                            <div className={styles.tugMemberList}>
+                                                {team.members.map((member) => (
+                                                    <div key={member.sessionId} className={styles.tugMemberRow}>
+                                                        <span>{member.name}</span>
+                                                        <span>{member.contribution}</span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        ) : (
+                            <div className={styles.grid}>
+                                {players.map((p) =>
+                                    gameType === "bowman" ? (
+                                        <BowmanPlayerCard
+                                            key={p.id}
+                                            name={p.name}
+                                            snapshot={bowmanProg.get(p.id) ?? null}
+                                        />
+                                    ) : gameType === "codebreaker" ? (
+                                        <CodebreakerPlayerCard
+                                            key={p.id}
+                                            name={p.name}
+                                            snapshot={
+                                                codebreakerProg.get(p.id) ?? null
+                                            }
+                                        />
+                                    ) : gameType === "mathsprint" ? (
+                                        <MathSprintPlayerCard
+                                            key={p.id}
+                                            name={p.name}
+                                            snapshot={mathSprintProg.get(p.id) ?? null}
+                                        />
+                                    ) : gameType === "lightsout" ? (
+                                        <LightsOutPlayerCard
+                                            key={p.id}
+                                            name={p.name}
+                                            snapshot={
+                                                lightsOutProg.get(p.id) ?? null
+                                            }
+                                        />
+                                    ) : gameType === "pipeconnect" ? (
+                                        <PipeConnectPlayerCard
+                                            key={p.id}
+                                            name={p.name}
+                                            snapshot={
+                                                pipeConnectProg.get(p.id) ?? null
+                                            }
+                                        />
+                                    ) : gameType === "simoncopy" ? (
+                                        <SimonCopyPlayerCard
+                                            key={p.id}
+                                            name={p.name}
+                                            snapshot={
+                                                simonCopyProg.get(p.id) ?? null
+                                            }
+                                        />
+                                    ) : gameType === "memorysequenceplus" ? (
+                                        <MemorySequencePlusPlayerCard
+                                            key={p.id}
+                                            name={p.name}
+                                            snapshot={
+                                                memorySequencePlusProg.get(p.id) ??
+                                                null
+                                            }
+                                        />
+                                    ) : gameType === "oddoneout" ? (
+                                        <OddOneOutPlayerCard
+                                            key={p.id}
+                                            name={p.name}
+                                            snapshot={oddOneOutProg.get(p.id) ?? null}
+                                        />
+                                    ) : gameType === "pairmatch" ? (
+                                        <PairMatchPlayerCard
+                                            key={p.id}
+                                            name={p.name}
+                                            snapshot={pairMatchProg.get(p.id) ?? null}
+                                        />
+                                    ) : gameType === "reactiontap" ? (
+                                        renderReactionTapCard(p.id, p.name)
+                                    ) : gameType === "rushhour" ? (
+                                        <RushHourPlayerCard
+                                            key={p.id}
+                                            name={p.name}
+                                            snapshot={
+                                                rushHourProg.get(p.id) ?? null
+                                            }
+                                        />
+                                    ) : (
+                                        <PlayerCard
+                                            key={p.id}
+                                            name={p.name}
+                                            snapshot={progress.get(p.id) ?? null}
+                                            elapsedMs={now}
+                                        />
+                                    ),
+                                )}
+                            </div>
+                        )}
                     </>
                 )}
 
@@ -777,6 +1008,76 @@ export function Host({ roomCode }: Props) {
                                             {r.solved
                                                 ? `${r.attempts} guesses`
                                                 : `${r.attempts} used`}
+                                        </span>
+                                    </div>
+                                ))}
+                            </div>
+                        ) : gameType === "teamtug" ? (
+                            <div className={styles.bowmanResults}>
+                                {teamTugResults.map((team) => (
+                                    <div
+                                        key={team.id}
+                                        className={styles.tugResultCard}
+                                    >
+                                        <div className={styles.tugTeamHeader}>
+                                            <span
+                                                className={styles.bowmanResultRank}
+                                            >
+                                                {team.rank <= 3
+                                                    ? MEDALS[team.rank - 1]
+                                                    : `#${team.rank}`}
+                                            </span>
+                                            <span
+                                                className={styles.bowmanResultName}
+                                            >
+                                                {team.name} Team
+                                            </span>
+                                            <span
+                                                className={styles.bowmanResultScore}
+                                            >
+                                                {team.pulls} pulls
+                                            </span>
+                                        </div>
+                                        <div className={styles.tugMemberList}>
+                                            {team.members.map((member) => (
+                                                <div
+                                                    key={member.sessionId}
+                                                    className={styles.tugMemberRow}
+                                                >
+                                                    <span>{member.name}</span>
+                                                    <span>
+                                                        {member.contribution}{" "}
+                                                        pulls
+                                                    </span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        ) : gameType === "mathsprint" ? (
+                            <div className={styles.bowmanResults}>
+                                {mathSprintResults.map((r) => (
+                                    <div
+                                        key={r.id}
+                                        className={styles.bowmanResultRow}
+                                    >
+                                        <span
+                                            className={styles.bowmanResultRank}
+                                        >
+                                            {r.rank !== null && r.rank <= 3
+                                                ? MEDALS[r.rank - 1]
+                                                : (r.rank ?? "—")}
+                                        </span>
+                                        <span
+                                            className={styles.bowmanResultName}
+                                        >
+                                            {r.name}
+                                        </span>
+                                        <span
+                                            className={styles.bowmanResultScore}
+                                        >
+                                            {r.score} pts · {r.answeredCount} answered
                                         </span>
                                     </div>
                                 ))}
@@ -893,6 +1194,92 @@ export function Host({ roomCode }: Props) {
                                             {r.solved
                                                 ? `Round ${r.roundReached}`
                                                 : `Out at ${r.roundReached}`}
+                                        </span>
+                                    </div>
+                                ))}
+                            </div>
+                        ) : gameType === "oddoneout" ? (
+                            <div className={styles.bowmanResults}>
+                                {oddOneOutResults.map((r) => (
+                                    <div
+                                        key={r.id}
+                                        className={styles.bowmanResultRow}
+                                    >
+                                        <span
+                                            className={styles.bowmanResultRank}
+                                        >
+                                            {r.rank !== null && r.rank <= 3
+                                                ? MEDALS[r.rank - 1]
+                                                : (r.rank ?? "—")}
+                                        </span>
+                                        <span
+                                            className={styles.bowmanResultName}
+                                        >
+                                            {r.name}
+                                        </span>
+                                        <span
+                                            className={styles.bowmanResultScore}
+                                        >
+                                            {r.score} pts · {r.promptsCleared}/
+                                            {r.totalPrompts} ·{" "}
+                                            {formatTime(r.totalResponseTime)}
+                                        </span>
+                                    </div>
+                                ))}
+                            </div>
+                        ) : gameType === "pairmatch" ? (
+                            <div className={styles.bowmanResults}>
+                                {pairMatchResults.map((r) => (
+                                    <div
+                                        key={r.id}
+                                        className={styles.bowmanResultRow}
+                                    >
+                                        <span
+                                            className={styles.bowmanResultRank}
+                                        >
+                                            {r.rank !== null && r.rank <= 3
+                                                ? MEDALS[r.rank - 1]
+                                                : (r.rank ?? "—")}
+                                        </span>
+                                        <span
+                                            className={styles.bowmanResultName}
+                                        >
+                                            {r.name}
+                                        </span>
+                                        <span
+                                            className={styles.bowmanResultScore}
+                                        >
+                                            {r.solved
+                                                ? `${r.attempts} tries`
+                                                : `${r.pairsFound}/${r.totalPairs} pairs`}
+                                        </span>
+                                    </div>
+                                ))}
+                            </div>
+                        ) : gameType === "reactiontap" ? (
+                            <div className={styles.bowmanResults}>
+                                {reactionTapResults.map((r) => (
+                                    <div
+                                        key={r.id}
+                                        className={styles.bowmanResultRow}
+                                    >
+                                        <span
+                                            className={styles.bowmanResultRank}
+                                        >
+                                            {r.rank !== null && r.rank <= 3
+                                                ? MEDALS[r.rank - 1]
+                                                : (r.rank ?? "—")}
+                                        </span>
+                                        <span
+                                            className={styles.bowmanResultName}
+                                        >
+                                            {r.name}
+                                        </span>
+                                        <span
+                                            className={styles.bowmanResultScore}
+                                        >
+                                            {r.score} pts · {r.successfulPrompts}/
+                                            {r.goPrompts} hits
                                         </span>
                                     </div>
                                 ))}

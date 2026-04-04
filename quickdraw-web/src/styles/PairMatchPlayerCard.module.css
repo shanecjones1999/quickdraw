@@ -1,0 +1,56 @@
+.card {
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 0.85rem;
+  padding: 0.85rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+
+.header,
+.stats,
+.footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.name {
+  color: #fff;
+  font-weight: 600;
+}
+
+.solved {
+  color: #2ecc71;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.busy {
+  color: #ffd700;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.stats,
+.footer,
+.waiting {
+  color: rgba(255,255,255,0.65);
+  font-size: 0.82rem;
+}
+
+.progressBar {
+  height: 0.65rem;
+  border-radius: 999px;
+  overflow: hidden;
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.08);
+}
+
+.progressFill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #7c5cff, #4da3ff);
+}
