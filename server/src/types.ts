@@ -1,15 +1,8 @@
-import type { BowmanState, ShotResult } from "./bowman.js";
-import type { CodebreakerState, CodebreakerGuess } from "./codebreaker.js";
-import type { LightsOutState } from "./lightsout.js";
-import type {
-    MemorySequencePlusCell,
-    MemorySequencePlusState,
-} from "./memorysequenceplus.js";
-import type { PipeConnectState, PipeConnectPublicTile } from "./pipeconnect.js";
-import type { RushHourState } from "./rushhour.js";
-import type { SimonCopyState, SimonCopyColor } from "./simoncopy.js";
-
-export type { RushHourState };
+import type { ShotResult } from "./bowman.js";
+import type { CodebreakerGuess } from "./codebreaker.js";
+import type { MemorySequencePlusCell } from "./memorysequenceplus.js";
+import type { PipeConnectPublicTile } from "./pipeconnect.js";
+import type { SimonCopyColor } from "./simoncopy.js";
 export type GameType =
     | "klotski"
     | "bowman"
@@ -40,14 +33,7 @@ export interface Player {
     name: string;
     connected: boolean;
     disconnectTimeout: ReturnType<typeof setTimeout> | null;
-    puzzleState: PuzzleState | null;
-    bowmanState: BowmanState | null;
-    rushHourState: RushHourState | null;
-    lightsOutState: LightsOutState | null;
-    codebreakerState: CodebreakerState | null;
-    pipeConnectState: PipeConnectState | null;
-    simonCopyState: SimonCopyState | null;
-    memorySequencePlusState: MemorySequencePlusState | null;
+    gameState: unknown;
     rank: number | null;
     matchPoints: number;
     roundsWon: number;
