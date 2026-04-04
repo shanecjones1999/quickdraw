@@ -1,4 +1,10 @@
-import type { GameType } from "./types.js";
+import type { Server } from "socket.io";
+import type { GameType, Player, Room } from "./types.js";
+
+/** Socket type extracted from socket.io Server */
+export type SocketType = Parameters<
+    Parameters<Server["on"]>[1]
+>[0];
 
 /**
  * Each mini-game implements this interface so the server can orchestrate
@@ -9,13 +15,53 @@ import type { GameType } from "./types.js";
 export interface GameHandler {
     readonly type: GameType;
 
+    /**
+     * Minimum number of players required. Games below this threshold
+     * are excluded from the round sequence (e.g. teamtug needs 2+).
+     */
+    readonly minPlayers?: number;
+
     // ── Round start ─────────────────────────────────────────────────
     /** Create a shared seed so all players get the same puzzle / config. */
-    createSeed(): unknown;
+    createSeed(players?: ReadonlyArray<Player>): unknown;
     /** Create one player's initial state from the seed. */
     createState(seed: unknown): unknown;
     /** Extra fields merged into the `game:started` broadcast. */
     startPayload(seed: unknown): Record<string, unknown>;
+
+    /**
+     * Optional: If true, the game manages round start via onStart().
+     * The orchestrator still calls createSeed/createState, but the
+     * handler handles emitting game:started and setting up timers.
+     */
+    readonly customStart?: boolean;
+    onStart?(io: Server, room: Room, seed: unknown, endGame: (roomCode: string) => void): void;
+
+    /**
+     * Optional: If true, the generic action loop is skipped.
+     * The handler registers its own socket events via onAction().
+     */
+    readonly customAction?: boolean;
+    onAction?(
+        io: Server,
+        room: Room,
+        socket: SocketType,
+        data: unknown,
+        endGame: (roomCode: string) => void,
+    ): void;
+
+    /**
+     * Optional: Called after the generic action handler runs.
+     * For delayed effects (e.g. PairMatch mismatch timeout).
+     */
+    onPostAction?(
+        io: Server,
+        room: Room,
+        player: Player,
+    ): void;
+
+    /** Optional: Clean up room-level state / timeouts when round ends. */
+    onCleanup?(room: Room): void;
 
     // ── Player action ───────────────────────────────────────────────
     /** Socket event the player sends (e.g. "bowman:shot"). */
@@ -77,5 +123,6 @@ export interface GameHandler {
             rank: number | null;
             state: unknown;
         }>,
+        room?: Room,
     ): Array<Record<string, unknown>>;
 }

@@ -5,12 +5,10 @@ import { Server } from "socket.io";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 import { createRoom, getRoom, getRoomBySocket, deleteRoom } from "./rooms.js";
+import { getHandler, getAvailableGameTypes } from "./handlers/index.js";
+import { finishMathSprintState } from "./mathsprint.js";
+import type { MathSprintState } from "./mathsprint.js";
 import type { GameType, MatchStanding, Player, Room } from "./types.js";
-import {
-    AVAILABLE_GAME_TYPES,
-    gameRegistry,
-    getHandler,
-} from "./handlers/index.js";
 
 const DEFAULT_MATCH_ROUNDS = 5;
 const MIN_MATCH_ROUNDS = 1;
@@ -64,7 +62,7 @@ const io = new Server(httpServer, {
     cors: { origin: "*" },
 });
 
-// ── Helpers ─────────────────────────────────────────────────────────────
+// ── Helpers ─────────────────────────────────────────────────────────
 
 function sanitizeTotalRounds(value: number | undefined): number {
     if (!Number.isFinite(value)) return DEFAULT_MATCH_ROUNDS;
@@ -74,8 +72,8 @@ function sanitizeTotalRounds(value: number | undefined): number {
     );
 }
 
-function shuffleGameTypes(): GameType[] {
-    const pool = [...AVAILABLE_GAME_TYPES];
+function shuffleGameTypes(gameTypes: GameType[]): GameType[] {
+    const pool = [...gameTypes];
     for (let index = pool.length - 1; index > 0; index -= 1) {
         const swapIndex = Math.floor(Math.random() * (index + 1));
         [pool[index], pool[swapIndex]] = [pool[swapIndex], pool[index]];
@@ -83,16 +81,17 @@ function shuffleGameTypes(): GameType[] {
     return pool;
 }
 
-function createRoundSequence(totalRounds: number): GameType[] {
+function createRoundSequence(totalRounds: number, playerCount: number): GameType[] {
+    const availableGameTypes = getAvailableGameTypes(playerCount);
     const sequence: GameType[] = [];
 
     while (sequence.length < totalRounds) {
-        let bag = shuffleGameTypes();
+        let bag = shuffleGameTypes(availableGameTypes);
 
         if (sequence.length > 0) {
             let attempts = 0;
             while (bag[0] === sequence.at(-1) && attempts < 5) {
-                bag = shuffleGameTypes();
+                bag = shuffleGameTypes(availableGameTypes);
                 attempts += 1;
             }
         }
@@ -191,123 +190,40 @@ function removeDisconnectedPlayers(room: Room) {
     }
 }
 
-// ── Generic game orchestration ──────────────────────────────────────────
+function buildStandings(
+    room: Room,
+    lastRoundPoints: Map<string, number>,
+): MatchStanding[] {
+    const sortedPlayers = [...room.players.values()].sort((left, right) => {
+        if (right.matchPoints !== left.matchPoints)
+            return right.matchPoints - left.matchPoints;
+        if (right.roundsWon !== left.roundsWon)
+            return right.roundsWon - left.roundsWon;
+        return left.name.localeCompare(right.name);
+    });
 
-function buildRoundResults(room: Room) {
-    const handler = gameRegistry.get(room.gameType);
-    if (!handler) return [];
-
-    const entries = [...room.players.values()].map((player) => ({
+    return sortedPlayers.map((player, index) => ({
         id: player.id,
         name: player.name,
-        rank: player.rank,
-        state: player.gameState,
+        position: index + 1,
+        totalPoints: player.matchPoints,
+        roundsWon: player.roundsWon,
+        lastRoundPoints: lastRoundPoints.get(player.id) ?? 0,
     }));
-
-    return handler.buildResults(entries);
 }
 
-function emitPlayerResumeState(
-    socket: Parameters<typeof io.on>[1] extends (socket: infer T) => void
-        ? T
-        : never,
-    room: Room,
-    player: Player,
-) {
-    socket.emit("room:settings", {
-        totalRounds: room.totalRounds,
-        currentRound: room.currentRound,
-    });
-    socket.emit("room:gameType", { gameType: room.gameType });
-
-    if (room.phase === "lobby") {
-        return;
-    }
-
-    if (room.phase === "shuffling") {
-        socket.emit("round:shuffle", {
-            gameType: room.roundSequence[room.currentRound] ?? room.gameType,
-            roundNumber: room.currentRound + 1,
-            totalRounds: room.totalRounds,
-            durationMs: Math.max(
-                0,
-                (room.roundReadyOpensAt ?? Date.now()) - Date.now(),
-            ),
-            landingBufferMs: ROUND_SHUFFLE_LANDING_BUFFER_MS,
-        });
-        emitRoundReadyStatus(room);
-        return;
-    }
-
-    if (room.phase === "results") {
-        const results = buildRoundResults(room);
-        const lastRoundPoints = new Map<string, number>();
-        const playerCount = room.players.size;
-
-        for (const entry of results as Array<{
-            id: string;
-            rank?: number | null;
-        }>) {
-            const points =
-                entry.rank !== null && entry.rank !== undefined
-                    ? Math.max(playerCount - entry.rank + 1, 1)
-                    : 0;
-            lastRoundPoints.set(entry.id, points);
-        }
-
-        socket.emit("game:over", {
-            results,
-            gameType: room.gameType,
-            roundNumber: room.currentRound,
-            totalRounds: room.totalRounds,
-            matchOver: room.currentRound >= room.totalRounds,
-            standings: buildStandings(room, lastRoundPoints),
-            autoAdvanceAt: room.resultsAutoAdvanceAt,
-        });
-        return;
-    }
-
-    // phase === "playing" — resume the active game
-    const handler = gameRegistry.get(room.gameType);
-    if (!handler || !player.gameState) return;
-
-    const basePayload = {
-        gameType: room.gameType,
-        roundNumber: room.currentRound,
-        totalRounds: room.totalRounds,
-    };
-
-    socket.emit("game:started", {
-        ...basePayload,
-        ...handler.resumeStartPayload(player.gameState),
-    });
-
-    setTimeout(() => {
-        if (!player.gameState) return;
-        socket.emit(
-            handler.resumeSyncEvent,
-            handler.resumeSyncPayload(player.gameState),
-        );
-        if (
-            handler.solvedEvent &&
-            handler.shouldResumeSolved(player.gameState, player.rank)
-        ) {
-            socket.emit(
-                handler.solvedEvent,
-                handler.resumeSolvedPayload(
-                    player.gameState,
-                    player.rank ?? 0,
-                ),
-            );
-        }
-    }, 0);
-}
+// ── Round lifecycle ─────────────────────────────────────────────────
 
 function clearRoundState(room: Room) {
+    const handler = getHandler(room.gameType);
+    handler.onCleanup?.(room);
+
     room.gameStartTime = null;
     room.finishOrder = [];
     room.roundReadyPlayerSessionIds.clear();
     room.roundReadyOpensAt = null;
+    room.roundEndAt = null;
+
     for (const player of room.players.values()) {
         player.gameState = null;
         player.rank = null;
@@ -329,34 +245,19 @@ function clearPendingResultsAdvance(room: Room) {
     room.resultsAutoAdvanceAt = null;
 }
 
-function buildStandings(
-    room: Room,
-    lastRoundPoints: Map<string, number>,
-): MatchStanding[] {
-    const sortedPlayers = [...room.players.values()].sort((left, right) => {
-        if (right.matchPoints !== left.matchPoints) {
-            return right.matchPoints - left.matchPoints;
-        }
-        if (right.roundsWon !== left.roundsWon) {
-            return right.roundsWon - left.roundsWon;
-        }
-        return left.name.localeCompare(right.name);
-    });
-
-    return sortedPlayers.map((player, index) => ({
-        id: player.id,
-        name: player.name,
-        position: index + 1,
-        totalPoints: player.matchPoints,
-        roundsWon: player.roundsWon,
-        lastRoundPoints: lastRoundPoints.get(player.id) ?? 0,
-    }));
+function clearRoundEndTimeout(room: Room) {
+    if (room.roundEndTimeout) {
+        clearTimeout(room.roundEndTimeout);
+        room.roundEndTimeout = null;
+    }
+    room.roundEndAt = null;
 }
 
 function startRound(room: Room, nextGameType?: GameType) {
     if (room.currentRound >= room.totalRounds) return;
 
     clearPendingResultsAdvance(room);
+    clearRoundEndTimeout(room);
     clearRoundState(room);
     room.phase = "playing";
     room.gameStartTime = Date.now();
@@ -365,18 +266,23 @@ function startRound(room: Room, nextGameType?: GameType) {
     room.currentRound += 1;
 
     const handler = getHandler(room.gameType);
-    const seed = handler.createSeed();
+    const playersArray = [...room.players.values()];
+    const seed = handler.createSeed(playersArray);
 
     for (const player of room.players.values()) {
         player.gameState = handler.createState(seed);
     }
 
-    io.to(room.code).emit("game:started", {
-        gameType: room.gameType,
-        roundNumber: room.currentRound,
-        totalRounds: room.totalRounds,
-        ...handler.startPayload(seed),
-    });
+    if (handler.customStart && handler.onStart) {
+        handler.onStart(io, room, seed, endGame);
+    } else {
+        io.to(room.code).emit("game:started", {
+            gameType: room.gameType,
+            ...handler.startPayload(seed),
+            roundNumber: room.currentRound,
+            totalRounds: room.totalRounds,
+        });
+    }
 
     emitRoomSettings(room);
     console.log(
@@ -389,15 +295,18 @@ function queueRoundStart(room: Room) {
 
     clearPendingRoundStart(room);
     clearPendingResultsAdvance(room);
+    clearRoundEndTimeout(room);
 
     const nextGameType = room.roundSequence[room.currentRound] ?? "klotski";
     const nextRoundNumber = room.currentRound + 1;
+    const availableGameTypes = getAvailableGameTypes(room.players.size);
 
     room.phase = "shuffling";
     room.roundReadyPlayerSessionIds.clear();
     room.roundReadyOpensAt = Date.now() + ROUND_SHUFFLE_DURATION_MS;
     io.to(room.code).emit("round:shuffle", {
         gameType: nextGameType,
+        availableGameTypes,
         roundNumber: nextRoundNumber,
         totalRounds: room.totalRounds,
         durationMs: ROUND_SHUFFLE_DURATION_MS,
@@ -406,35 +315,272 @@ function queueRoundStart(room: Room) {
     emitRoundReadyStatus(room);
 }
 
+// ── Player resume (reconnection) ────────────────────────────────────
+
+function emitPlayerResumeState(
+    socket: Parameters<typeof io.on>[1] extends (socket: infer T) => void
+        ? T
+        : never,
+    room: Room,
+    player: Player,
+) {
+    socket.emit("room:settings", {
+        totalRounds: room.totalRounds,
+        currentRound: room.currentRound,
+    });
+    socket.emit("room:gameType", { gameType: room.gameType });
+
+    if (room.phase === "lobby") return;
+
+    if (room.phase === "shuffling") {
+        socket.emit("round:shuffle", {
+            gameType: room.roundSequence[room.currentRound] ?? room.gameType,
+            availableGameTypes: getAvailableGameTypes(room.players.size),
+            roundNumber: room.currentRound + 1,
+            totalRounds: room.totalRounds,
+            durationMs: Math.max(
+                0,
+                (room.roundReadyOpensAt ?? Date.now()) - Date.now(),
+            ),
+            landingBufferMs: ROUND_SHUFFLE_LANDING_BUFFER_MS,
+        });
+        emitRoundReadyStatus(room);
+        return;
+    }
+
+    if (room.phase === "results") {
+        const handler = getHandler(room.gameType);
+        const results = handler.buildResults(
+            [...room.players.values()].map((p) => ({
+                id: p.id,
+                name: p.name,
+                rank: p.rank,
+                state: p.gameState,
+            })),
+            room,
+        );
+        const lastRoundPoints = new Map<string, number>();
+        const playerCount = room.players.size;
+        const isTeamGame = room.gameType === "teamtug";
+
+        if (isTeamGame) {
+            for (const entry of results as Array<{
+                rank: number;
+                members: Array<{ id: string }>;
+            }>) {
+                const points = Math.max(2 - entry.rank + 1, 1);
+                for (const member of entry.members) {
+                    lastRoundPoints.set(member.id, points);
+                }
+            }
+        } else {
+            for (const entry of results as Array<{
+                id: string;
+                rank?: number | null;
+            }>) {
+                const points =
+                    entry.rank !== null && entry.rank !== undefined
+                        ? Math.max(playerCount - entry.rank + 1, 1)
+                        : 0;
+                lastRoundPoints.set(entry.id, points);
+            }
+        }
+
+        socket.emit("game:over", {
+            results,
+            gameType: room.gameType,
+            roundNumber: room.currentRound,
+            totalRounds: room.totalRounds,
+            matchOver: room.currentRound >= room.totalRounds,
+            standings: buildStandings(room, lastRoundPoints),
+            autoAdvanceAt: room.resultsAutoAdvanceAt,
+        });
+        return;
+    }
+
+    // phase === "playing"
+    if (!player.gameState) return;
+
+    const handler = getHandler(room.gameType);
+    const basePayload = {
+        gameType: room.gameType,
+        roundNumber: room.currentRound,
+        totalRounds: room.totalRounds,
+    };
+
+    // TeamTug resume uses room state, not player state
+    if (room.gameType === "teamtug" && room.teamTugState) {
+        const st = room.teamTugState;
+        socket.emit("game:started", {
+            ...basePayload,
+            teamTugState: {
+                finishLine: st.finishLine,
+                markerPosition: st.markerPosition,
+                timeLimitMs: st.timeLimitMs,
+                startedAt: st.startedAt,
+                winnerTeamId: st.winnerTeamId,
+                teams: (["red", "blue"] as const).map((teamId) => {
+                    const team = st.teams[teamId];
+                    return {
+                        id: team.id,
+                        name: team.name,
+                        totalPulls: team.totalPulls,
+                        members: team.members.map((member) => {
+                            const p = room.players.get(member.sessionId);
+                            return {
+                                id: p?.id ?? member.sessionId,
+                                sessionId: member.sessionId,
+                                name: p?.name ?? "Disconnected Player",
+                                connected: p?.connected ?? false,
+                                contribution:
+                                    team.contributions[member.sessionId] ?? 0,
+                            };
+                        }),
+                    };
+                }),
+            },
+        });
+        return;
+    }
+
+    // ReactionTap resume needs signal payload too
+    if (room.gameType === "reactiontap") {
+        socket.emit("game:started", {
+            ...basePayload,
+            ...handler.resumeStartPayload(player.gameState),
+        });
+        setTimeout(() => {
+            socket.emit(
+                handler.resumeSyncEvent,
+                handler.resumeSyncPayload(player.gameState!),
+            );
+            // Also send current signal state
+            const rs = room.reactionTapRoomState;
+            const kind = rs?.activeSignalKind ?? "idle";
+            socket.emit("reactiontap:signal", {
+                promptIndex: rs?.activePromptIndex ?? -1,
+                totalPrompts: rs?.prompts.length ?? 6,
+                kind,
+                label: kind === "go" ? "TAP!" : kind === "decoy" ? "WAIT" : "Stand by",
+                activeUntil: rs?.activeSignalEndsAt ?? null,
+                startedAt: rs?.activeSignalStartedAt ?? null,
+            });
+        }, 0);
+        return;
+    }
+
+    // MathSprint resume includes endAt
+    if (room.gameType === "mathsprint") {
+        socket.emit("game:started", {
+            ...basePayload,
+            ...handler.resumeStartPayload(player.gameState),
+            endAt: room.roundEndAt,
+        });
+        return;
+    }
+
+    // Generic resume
+    socket.emit("game:started", {
+        ...basePayload,
+        ...handler.resumeStartPayload(player.gameState),
+    });
+    setTimeout(() => {
+        if (!player.gameState) return;
+        socket.emit(
+            handler.resumeSyncEvent,
+            handler.resumeSyncPayload(player.gameState),
+        );
+        if (handler.shouldResumeSolved(player.gameState, player.rank) && player.rank !== null && handler.solvedEvent) {
+            socket.emit(
+                handler.solvedEvent,
+                handler.resumeSolvedPayload(player.gameState, player.rank),
+            );
+        }
+    }, 0);
+}
+
+// ── End game ────────────────────────────────────────────────────────
+
 function endGame(roomCode: string) {
     const room = getRoom(roomCode);
     if (!room) return;
     if (room.phase !== "playing") return;
+
     clearPendingResultsAdvance(room);
+    clearRoundEndTimeout(room);
+
+    const handler = getHandler(room.gameType);
+    handler.onCleanup?.(room);
+
     room.phase = "results";
 
-    const results = buildRoundResults(room);
+    // MathSprint finalization
+    if (room.gameType === "mathsprint") {
+        for (const player of room.players.values()) {
+            if (player.gameState) {
+                player.gameState = finishMathSprintState(
+                    player.gameState as MathSprintState,
+                );
+            }
+        }
+    }
+
+    const results = handler.buildResults(
+        [...room.players.values()].map((p) => ({
+            id: p.id,
+            name: p.name,
+            rank: p.rank,
+            state: p.gameState,
+        })),
+        room,
+    );
 
     const lastRoundPoints = new Map<string, number>();
     const playerCount = room.players.size;
+    const isTeamGame = room.gameType === "teamtug";
 
-    for (const entry of results as Array<{
-        id: string;
-        rank?: number | null;
-    }>) {
-        const player = getPlayerById(room, entry.id);
-        if (!player) continue;
+    if (isTeamGame) {
+        const winningTeamCount = (results as Array<{ winner: boolean }>).filter(
+            (entry) => entry.winner,
+        ).length;
 
-        const points =
-            entry.rank !== null && entry.rank !== undefined
-                ? Math.max(playerCount - entry.rank + 1, 1)
-                : 0;
+        for (const entry of results as Array<{
+            rank: number;
+            winner: boolean;
+            members: Array<{ sessionId: string }>;
+        }>) {
+            const points = Math.max(2 - entry.rank + 1, 1);
 
-        player.matchPoints += points;
-        if (entry.rank === 1) {
-            player.roundsWon += 1;
+            for (const member of entry.members) {
+                const player = room.players.get(member.sessionId);
+                if (!player) continue;
+
+                player.matchPoints += points;
+                if (entry.winner && winningTeamCount === 1) {
+                    player.roundsWon += 1;
+                }
+                lastRoundPoints.set(player.id, points);
+            }
         }
-        lastRoundPoints.set(entry.id, points);
+    } else {
+        for (const entry of results as Array<{
+            id: string;
+            rank?: number | null;
+        }>) {
+            const player = getPlayerById(room, entry.id);
+            if (!player) continue;
+
+            const points =
+                entry.rank !== null && entry.rank !== undefined
+                    ? Math.max(playerCount - entry.rank + 1, 1)
+                    : 0;
+
+            player.matchPoints += points;
+            if (entry.rank === 1) {
+                player.roundsWon += 1;
+            }
+            lastRoundPoints.set(entry.id, points);
+        }
     }
 
     const standings = buildStandings(room, lastRoundPoints);
@@ -467,14 +613,16 @@ function endGame(roomCode: string) {
     );
 }
 
-// ── Serve the React build in production ─────────────────────────────────
+// ── Static file serving ─────────────────────────────────────────────
+
 const buildPath = join(__dirname, "../../quickdraw-web/dist");
 app.use(express.static(buildPath));
 app.get("*", (_req, res) => {
     res.sendFile(join(buildPath, "index.html"));
 });
 
-// ── Socket handlers ─────────────────────────────────────────────────────
+// ── Socket.io connection ────────────────────────────────────────────
+
 io.on("connection", (socket) => {
     console.log(`[connect] ${socket.id}`);
 
@@ -506,12 +654,18 @@ io.on("connection", (socket) => {
         },
     );
 
-    // ── Host selects game type ───────────────────────────────────────
+    // ── Host selects game type ──────────────────────────────────────
     socket.on("host:setGameType", ({ gameType }: { gameType: GameType }) => {
         const room = getRoomBySocket(socket.id);
         if (!room || room.hostSocketId !== socket.id) return;
         if (room.phase !== "lobby") return;
-        if (!gameRegistry.has(gameType)) return;
+
+        try {
+            getHandler(gameType);
+        } catch {
+            return;
+        }
+
         room.gameType = gameType;
         io.to(room.code).emit("room:gameType", { gameType });
         console.log(`[host:setGameType] room ${room.code} → ${gameType}`);
@@ -617,7 +771,10 @@ io.on("connection", (socket) => {
 
         room.totalRounds = sanitizeTotalRounds(room.totalRounds);
         room.currentRound = 0;
-        room.roundSequence = createRoundSequence(room.totalRounds);
+        room.roundSequence = createRoundSequence(
+            room.totalRounds,
+            room.players.size,
+        );
         for (const player of room.players.values()) {
             player.matchPoints = 0;
             player.roundsWon = 0;
@@ -626,61 +783,58 @@ io.on("connection", (socket) => {
         queueRoundStart(room);
     });
 
-    // ── Generic game action handler ─────────────────────────────────
-    for (const handler of gameRegistry.values()) {
+    // ── Generic action handler ──────────────────────────────────────
+    // Register listeners for all game action events
+    for (const gameType of [
+        "klotski", "bowman", "rushhour", "lightsout", "codebreaker",
+        "mathsprint", "pipeconnect", "simoncopy", "memorysequenceplus",
+        "pairmatch", "oddoneout", "reactiontap", "teamtug",
+    ] as GameType[]) {
+        const handler = getHandler(gameType);
+
         socket.on(handler.actionEvent, (data: unknown) => {
             const room = getRoomBySocket(socket.id);
             if (
                 !room ||
                 room.phase !== "playing" ||
-                room.gameType !== handler.type
+                room.gameType !== gameType
             )
                 return;
+
+            // Custom action handlers manage everything themselves
+            if (handler.customAction && handler.onAction) {
+                handler.onAction(io, room, socket, data, endGame);
+                return;
+            }
 
             const player = getPlayerBySocket(room, socket.id);
-            if (
-                !player ||
-                !player.gameState ||
-                handler.isPlayerDone(player.gameState)
-            )
-                return;
+            if (!player?.gameState) return;
+            if (handler.isPlayerDone(player.gameState)) return;
 
-            const { ok, state } = handler.applyAction(
-                player.gameState,
-                data,
-            );
+            // Time-gated games
+            if (room.roundEndAt !== null && Date.now() > room.roundEndAt) return;
+
+            const { ok, state } = handler.applyAction(player.gameState, data);
             if (!ok) return;
 
             player.gameState = state;
 
-            // Send update to the acting player
+            // Send update to player
             socket.emit(handler.updateEvent, handler.updatePayload(state));
 
-            // Track finish order + emit solved
-            let rank: number | null = player.rank;
+            // Track finish order
+            let rank: number | null = null;
             if (handler.shouldTrackFinish(state)) {
                 if (!room.finishOrder.includes(player.id)) {
                     room.finishOrder.push(player.id);
                 }
                 rank = room.finishOrder.indexOf(player.id) + 1;
                 player.rank = rank;
+
                 if (handler.solvedEvent) {
                     socket.emit(
                         handler.solvedEvent,
                         handler.solvedPayload(state, rank),
-                    );
-                }
-            } else if (
-                handler.solvedEvent &&
-                handler.isPlayerDone(state) &&
-                !handler.shouldTrackFinish(state)
-            ) {
-                // Games like codebreaker that emit solved without finish tracking
-                const st = state as { solved?: boolean };
-                if (st.solved) {
-                    socket.emit(
-                        handler.solvedEvent,
-                        handler.solvedPayload(state, rank ?? 0),
                     );
                 }
             }
@@ -691,10 +845,12 @@ io.on("connection", (socket) => {
                 handler.progressPayload(state, socket.id, rank),
             );
 
-            // Check if all players are done
+            // Post-action hook (e.g. PairMatch mismatch timeout)
+            handler.onPostAction?.(io, room, player);
+
+            // Check if all players done
             const allDone = [...room.players.values()].every(
-                (p) =>
-                    !p.gameState || handler.isPlayerDone(p.gameState),
+                (p) => p.gameState && handler.isPlayerDone(p.gameState),
             );
             if (allDone) endGame(room.code);
         });
@@ -725,6 +881,7 @@ io.on("connection", (socket) => {
 
         clearPendingRoundStart(room);
         clearPendingResultsAdvance(room);
+        clearRoundEndTimeout(room);
         room.phase = "lobby";
         room.currentRound = 0;
         room.roundSequence = [];
@@ -749,6 +906,9 @@ io.on("connection", (socket) => {
         if (room.hostSocketId === socket.id) {
             clearPendingRoundStart(room);
             clearPendingResultsAdvance(room);
+            clearRoundEndTimeout(room);
+            const handler = getHandler(room.gameType);
+            handler.onCleanup?.(room);
             io.to(room.code).emit("error", { message: "Host disconnected." });
             deleteRoom(room.code);
         } else {

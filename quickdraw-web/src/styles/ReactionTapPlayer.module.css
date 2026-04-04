@@ -1,0 +1,120 @@
+.statsGrid {
+  width: 100%;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.8rem;
+}
+
+.statCard,
+.paceCard,
+.feedbackCard,
+.signalPanel {
+  width: 100%;
+  border-radius: 1rem;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.05);
+}
+
+.statCard,
+.paceCard {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.9rem 1rem;
+}
+
+.statLabel {
+  color: rgba(255,255,255,0.55);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.statValue,
+.paceValue {
+  color: #fff;
+  font-size: 1.2rem;
+  font-weight: 700;
+}
+
+.signalPanel {
+  padding: 1.35rem 1.1rem;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.signalEyebrow {
+  color: rgba(255,255,255,0.58);
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.signalLabel {
+  font-family: 'Russo One', sans-serif;
+  font-size: clamp(2rem, 10vw, 3rem);
+  color: #fff;
+}
+
+.signalHint {
+  color: rgba(255,255,255,0.72);
+  font-size: 0.95rem;
+  line-height: 1.45;
+}
+
+.signalIdle {
+  background: linear-gradient(180deg, rgba(77,163,255,0.2), rgba(77,163,255,0.08));
+}
+
+.signalGo {
+  background: linear-gradient(180deg, rgba(57,217,138,0.28), rgba(57,217,138,0.1));
+  border-color: rgba(57,217,138,0.36);
+}
+
+.signalDecoy {
+  background: linear-gradient(180deg, rgba(255,95,87,0.25), rgba(255,95,87,0.08));
+  border-color: rgba(255,95,87,0.32);
+}
+
+.tapButton {
+  width: 100%;
+  border: none;
+  border-radius: 1.2rem;
+  padding: 1.35rem 1rem;
+  font-family: 'Russo One', sans-serif;
+  font-size: clamp(1.8rem, 8vw, 2.7rem);
+  letter-spacing: 0.06em;
+  color: #0d0d2b;
+  box-shadow: 0 16px 30px rgba(0,0,0,0.22);
+}
+
+.tapButtonIdle {
+  background: #4da3ff;
+}
+
+.tapButtonGo {
+  background: #39d98a;
+}
+
+.tapButtonDecoy {
+  background: #ff5f57;
+}
+
+.paceRow {
+  width: 100%;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.8rem;
+}
+
+.feedbackCard {
+  padding: 0.95rem 1rem;
+  color: #fff;
+  font-size: 1rem;
+  font-weight: 600;
+  text-align: center;
+}

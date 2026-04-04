@@ -4,9 +4,14 @@ export type GameType =
     | "rushhour"
     | "lightsout"
     | "codebreaker"
+    | "mathsprint"
     | "pipeconnect"
     | "simoncopy"
-    | "memorysequenceplus";
+    | "memorysequenceplus"
+    | "oddoneout"
+    | "pairmatch"
+    | "teamtug"
+    | "reactiontap";
 
 // ─── Klotski ─────────────────────────────────────────────────────────────────
 
@@ -42,6 +47,7 @@ export interface GameOverPayload<T = unknown> {
 
 export interface RoundShufflePayload {
     gameType: GameType;
+    availableGameTypes: GameType[];
     roundNumber: number;
     totalRounds: number;
     durationMs: number;
@@ -53,6 +59,46 @@ export interface RoundReadyStatusPayload {
     readyTarget: number;
     readyThresholdMet: boolean;
     playerReady: boolean;
+}
+
+export type TeamTugTeamId = "red" | "blue";
+
+export interface TeamTugMemberSnapshot {
+    id: string;
+    sessionId: string;
+    name: string;
+    connected: boolean;
+    contribution: number;
+}
+
+export interface TeamTugTeamSnapshot {
+    id: TeamTugTeamId;
+    name: string;
+    totalPulls: number;
+    members: TeamTugMemberSnapshot[];
+}
+
+export interface TeamTugStateSnapshot {
+    finishLine: number;
+    markerPosition: number;
+    timeLimitMs: number;
+    startedAt: number;
+    winnerTeamId: TeamTugTeamId | null;
+    teams: TeamTugTeamSnapshot[];
+}
+
+export interface TeamTugTeamResult {
+    id: TeamTugTeamId;
+    name: string;
+    pulls: number;
+    winner: boolean;
+    rank: number;
+    members: Array<{
+        id: string;
+        sessionId: string;
+        name: string;
+        contribution: number;
+    }>;
 }
 
 export interface ProgressSnapshot {
@@ -173,6 +219,47 @@ export interface CodebreakerResult {
     solved: boolean;
 }
 
+// ─── Math Sprint ─────────────────────────────────────────────────────────────
+
+export interface MathSprintQuestion {
+    id: number;
+    prompt: string;
+    answers: number[];
+}
+
+export interface MathSprintConfig {
+    durationMs: number;
+    endAt: number | null;
+    question: MathSprintQuestion;
+    score: number;
+    answeredCount: number;
+    streak: number;
+    bestStreak: number;
+    lastAnswerCorrect: boolean | null;
+}
+
+export interface MathSprintProgressSnapshot {
+    playerId: string;
+    score: number;
+    answeredCount: number;
+    streak: number;
+    bestStreak: number;
+    lastAnswerCorrect: boolean | null;
+    currentQuestion: MathSprintQuestion;
+    done: boolean;
+    finishTime: number | null;
+}
+
+export interface MathSprintResult {
+    id: string;
+    name: string;
+    rank: number | null;
+    score: number;
+    answeredCount: number;
+    bestStreak: number;
+    lastCorrectAt: number | null;
+}
+
 // ─── Pipe Connect ───────────────────────────────────────────────────────────
 
 export interface PipeConnectTile {
@@ -258,6 +345,128 @@ export interface MemorySequencePlusResult {
     finishTime: number | null;
     solved: boolean;
     failed: boolean;
+}
+
+export type ReactionTapLatestOutcome =
+    | "success"
+    | "penalty"
+    | "missed"
+    | "decoy"
+    | null;
+
+export interface ReactionTapConfig {
+    totalPrompts: number;
+    goPrompts: number;
+}
+
+export interface ReactionTapProgressSnapshot {
+    playerId: string;
+    promptsCompleted: number;
+    totalPrompts: number;
+    goPrompts: number;
+    successfulPrompts: number;
+    missedPrompts: number;
+    penalties: number;
+    score: number;
+    averageReactionTime: number | null;
+    bestReactionTime: number | null;
+    latestReactionTime: number | null;
+    latestOutcome: ReactionTapLatestOutcome;
+    done: boolean;
+}
+
+export interface ReactionTapResult {
+    id: string;
+    name: string;
+    rank: number | null;
+    successfulPrompts: number;
+    goPrompts: number;
+    missedPrompts: number;
+    penalties: number;
+    score: number;
+    averageReactionTime: number | null;
+    bestReactionTime: number | null;
+    finishTime: number | null;
+}
+
+// ─── Odd One Out ──────────────────────────────────────────────────────────────
+
+export type OddOneOutShape =
+    | "circle"
+    | "square"
+    | "triangle"
+    | "diamond"
+    | "star";
+
+export interface OddOneOutCell {
+    shape: OddOneOutShape;
+    color: string;
+}
+
+export interface OddOneOutPrompt {
+    rows: number;
+    cols: number;
+    items: OddOneOutCell[];
+}
+
+export interface OddOneOutConfig {
+    prompt: OddOneOutPrompt | null;
+    promptCount: number;
+}
+
+export interface OddOneOutProgressSnapshot {
+    playerId: string;
+    promptsCleared: number;
+    totalPrompts: number;
+    score: number;
+    totalResponseTime: number;
+    penaltyCount: number;
+    lockedOutUntil: number | null;
+    done: boolean;
+    finishTime: number | null;
+    currentPrompt: OddOneOutPrompt | null;
+}
+
+export interface OddOneOutResult {
+    id: string;
+    name: string;
+    rank: number | null;
+    promptsCleared: number;
+    totalPrompts: number;
+    score: number;
+    totalResponseTime: number;
+    penaltyCount: number;
+    finishTime: number | null;
+}
+
+export interface PairMatchTile {
+    id: string;
+    state: "hidden" | "revealed" | "matched";
+    symbol: string | null;
+}
+
+export interface PairMatchProgressSnapshot {
+    playerId: string;
+    attempts: number;
+    pairsFound: number;
+    totalPairs: number;
+    solved: boolean;
+    done: boolean;
+    busy: boolean;
+    rank: number | null;
+    finishTime: number | null;
+    tiles: PairMatchTile[];
+}
+
+export interface PairMatchResult {
+    id: string;
+    name: string;
+    rank: number | null;
+    attempts: number;
+    pairsFound: number;
+    totalPairs: number;
+    finishTime: number | null;
+    solved: boolean;
 }
 
 export interface BowmanResult {

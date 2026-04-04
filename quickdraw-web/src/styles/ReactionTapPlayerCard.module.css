@@ -1,0 +1,44 @@
+.card {
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 0.85rem;
+  padding: 0.85rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.header,
+.progressRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.name {
+  color: #fff;
+  font-weight: 600;
+}
+
+.done {
+  color: #39d98a;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.progressRow {
+  color: rgba(255,255,255,0.68);
+  font-size: 0.82rem;
+}
+
+.outcome {
+  color: #ffd700;
+  font-size: 0.84rem;
+  font-weight: 700;
+}
+
+.waiting {
+  color: rgba(255,255,255,0.35);
+  font-size: 0.8rem;
+}

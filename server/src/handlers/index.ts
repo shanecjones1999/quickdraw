@@ -8,6 +8,11 @@ import { codebreakerHandler } from "./codebreaker.js";
 import { pipeconnectHandler } from "./pipeconnect.js";
 import { simoncopyHandler } from "./simoncopy.js";
 import { memorysequenceplusHandler } from "./memorysequenceplus.js";
+import { mathsprintHandler } from "./mathsprint.js";
+import { oddoneoutHandler } from "./oddoneout.js";
+import { pairmatchHandler } from "./pairmatch.js";
+import { reactiontapHandler } from "./reactiontap.js";
+import { teamtugHandler } from "./teamtug.js";
 
 const ALL_HANDLERS: GameHandler[] = [
     klotskiHandler,
@@ -18,6 +23,11 @@ const ALL_HANDLERS: GameHandler[] = [
     pipeconnectHandler,
     simoncopyHandler,
     memorysequenceplusHandler,
+    mathsprintHandler,
+    oddoneoutHandler,
+    pairmatchHandler,
+    reactiontapHandler,
+    teamtugHandler,
 ];
 
 export const gameRegistry = new Map<GameType, GameHandler>(
@@ -32,4 +42,10 @@ export function getHandler(type: GameType): GameHandler {
     const handler = gameRegistry.get(type);
     if (!handler) throw new Error(`No handler for game type: ${type}`);
     return handler;
+}
+
+export function getAvailableGameTypes(playerCount: number): GameType[] {
+    return ALL_HANDLERS.filter(
+        (h) => !h.minPlayers || playerCount >= h.minPlayers,
+    ).map((h) => h.type);
 }
