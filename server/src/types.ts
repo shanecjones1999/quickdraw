@@ -1,24 +1,16 @@
-import type { BowmanState, ShotResult } from "./bowman.js";
-import type { CodebreakerState, CodebreakerGuess } from "./codebreaker.js";
-import type { LightsOutState } from "./lightsout.js";
-import type { MathSprintQuestion, MathSprintState } from "./mathsprint.js";
-import type {
-    MemorySequencePlusCell,
-    MemorySequencePlusState,
-} from "./memorysequenceplus.js";
-import type { PairMatchState, PairMatchPublicTile } from "./pairmatch.js";
-import type { OddOneOutPrompt, OddOneOutState } from "./oddoneout.js";
-import type { PipeConnectState, PipeConnectPublicTile } from "./pipeconnect.js";
+import type { ShotResult } from "./bowman.js";
+import type { CodebreakerGuess } from "./codebreaker.js";
+import type { MathSprintQuestion } from "./mathsprint.js";
+import type { MemorySequencePlusCell } from "./memorysequenceplus.js";
+import type { PairMatchPublicTile } from "./pairmatch.js";
+import type { OddOneOutPrompt } from "./oddoneout.js";
+import type { PipeConnectPublicTile } from "./pipeconnect.js";
 import type {
     ReactionTapLatestOutcome,
     ReactionTapRoomState,
-    ReactionTapState,
 } from "./reactiontap.js";
-import type { RushHourState } from "./rushhour.js";
-import type { SimonCopyState, SimonCopyColor } from "./simoncopy.js";
+import type { SimonCopyColor } from "./simoncopy.js";
 import type { TeamTugState } from "./teamtug.js";
-
-export type { RushHourState };
 export type GameType =
     | "klotski"
     | "bowman"
@@ -54,19 +46,7 @@ export interface Player {
     name: string;
     connected: boolean;
     disconnectTimeout: ReturnType<typeof setTimeout> | null;
-    puzzleState: PuzzleState | null;
-    bowmanState: BowmanState | null;
-    rushHourState: RushHourState | null;
-    lightsOutState: LightsOutState | null;
-    codebreakerState: CodebreakerState | null;
-    mathSprintState: MathSprintState | null;
-    pipeConnectState: PipeConnectState | null;
-    simonCopyState: SimonCopyState | null;
-    memorySequencePlusState: MemorySequencePlusState | null;
-    pairMatchState: PairMatchState | null;
-    oddOneOutState: OddOneOutState | null;
-    teamTugState: TeamTugState | null;
-    reactionTapState: ReactionTapState | null;
+    gameState: unknown;
     rank: number | null;
     matchPoints: number;
     roundsWon: number;
