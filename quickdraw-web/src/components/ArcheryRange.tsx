@@ -3,14 +3,14 @@
 // World coordinate system (matches server physics):
 //   origin = archer feet, x right, y up
 //   TARGET_X = 600, BULLSEYE_Y = 150
-//   GRAVITY = 150, MAX_SPEED = 400
+//   GRAVITY = 80, MAX_SPEED = 400
 
 import { useState, useEffect, useRef } from 'react';
 import type { ShotResult } from '../types';
 import styles from '../styles/ArcheryRange.module.css';
 
 // ─── Physics constants (must match server/src/bowman.ts) ─────────────────────
-const GRAVITY    = 150;
+const GRAVITY    = 80;
 const MAX_SPEED  = 400;
 const TARGET_X   = 600;
 const BULLSEYE_Y = 150;
@@ -119,14 +119,14 @@ export function ArcheryRange({ wind = 0, shots, dragDxSvg, dragDySvg, angle, pow
     const v0  = MAX_SPEED * (flyingShot.power / 100);
     const vx  = v0 * Math.cos(θ);
     const vy  = v0 * Math.sin(θ);
-    const tEnd = impactTime(vx, 0);
+    const tEnd = impactTime(vx, wind);
     animStartRef.current = null;
 
     function frame(ts: number) {
       if (animStartRef.current === null) animStartRef.current = ts;
       const frac = Math.min((ts - animStartRef.current) / ANIM_DURATION, 1);
       const t    = frac * tEnd;
-      const px   = vx * t;
+      const px   = vx * t + 0.5 * wind * t * t;
       const py   = vy * t - 0.5 * GRAVITY * t * t;
       // Velocity direction → SVG rotation angle
       const vyt  = vy - GRAVITY * t;
@@ -140,7 +140,7 @@ export function ArcheryRange({ wind = 0, shots, dragDxSvg, dragDySvg, angle, pow
     }
     rafRef.current = requestAnimationFrame(frame);
     return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); };
-  }, [flyingShot]);
+  }, [flyingShot, wind]);
   // ──────────────────────────────────────────────────────────────────────────
   const hasDrag = !mini
     && dragDxSvg !== undefined && dragDySvg !== undefined
@@ -163,6 +163,22 @@ export function ArcheryRange({ wind = 0, shots, dragDxSvg, dragDySvg, angle, pow
 
   const labelAnchor = aimEndX > VB_W * 0.55 ? 'end' : 'start';
   const labelOffsetX = labelAnchor === 'end' ? -8 : 8;
+
+  // Ghost trajectory preview during aiming
+  const showPreview = hasDrag && angle != null && power != null && power > 5;
+  const previewPath    = showPreview ? buildPath(angle!, power!, wind) : null;
+  const previewLandY   = showPreview ? (() => {
+    const θ = (angle! * Math.PI) / 180;
+    const v0 = MAX_SPEED * (power! / 100);
+    const vx = v0 * Math.cos(θ), vy = v0 * Math.sin(θ);
+    const t  = impactTime(vx, wind);
+    return vy * t - 0.5 * GRAVITY * t * t;
+  })() : null;
+
+  // Wind indicator label
+  const windLabel = Math.abs(wind) >= 1
+    ? `Wind ${wind > 0 ? '→' : '←'} ${Math.abs(wind).toFixed(1)}`
+    : null;
 
   return (
     <svg viewBox={`0 0 ${VB_W} ${VB_H}`} className={styles.svg}>
@@ -242,6 +258,44 @@ export function ArcheryRange({ wind = 0, shots, dragDxSvg, dragDySvg, angle, pow
         </g>
       )}
 
+      {/* ── Wind indicator ── */}
+      {!mini && windLabel && (
+        <text
+          x={VB_W / 2}
+          y="24"
+          fill="rgba(180,220,255,0.85)"
+          fontSize="18"
+          fontFamily="Inter,sans-serif"
+          fontWeight="600"
+          textAnchor="middle"
+        >
+          {windLabel}
+        </text>
+      )}
+
+      {/* ── Ghost trajectory preview (aiming) ── */}
+      {showPreview && previewPath && (
+        <g>
+          <path
+            d={previewPath}
+            fill="none"
+            stroke="rgba(255,255,255,0.3)"
+            strokeWidth="1.5"
+            strokeDasharray="8 5"
+          />
+          {previewLandY !== null && (
+            <circle
+              cx={TARGET_SVG_X}
+              cy={wy(previewLandY)}
+              r="5"
+              fill="rgba(255,255,255,0.6)"
+              stroke="rgba(255,255,255,0.9)"
+              strokeWidth="1.5"
+            />
+          )}
+        </g>
+      )}
+
       {/* ── Drag aiming (player screen only) ── */}
       {hasDrag && (
         <g>
@@ -289,7 +343,7 @@ export function ArcheryRange({ wind = 0, shots, dragDxSvg, dragDySvg, angle, pow
               fontFamily="Inter,sans-serif"
               fontWeight="700"
             >
-              {power.toFixed(1)}
+              {power.toFixed(0)}%
             </text>
           )}
         </g>

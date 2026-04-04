@@ -28,7 +28,7 @@ interface Props {
     initialWind: number;
 }
 
-export function BowmanPlayer({ roomCode, playerName }: Props) {
+export function BowmanPlayer({ roomCode, playerName, initialWind }: Props) {
     const [phase, setPhase] = useState<Phase>("playing");
     const [shots, setShots] = useState<ShotResult[]>([]);
     const [totalScore, setTotalScore] = useState(0);
@@ -205,6 +205,7 @@ export function BowmanPlayer({ roomCode, playerName }: Props) {
                             onPointerCancel={onPointerUp}
                         >
                             <ArcheryRange
+                                wind={initialWind}
                                 shots={shots}
                                 dragDxSvg={isDragging ? dragDxSvg : 0}
                                 dragDySvg={isDragging ? dragDySvg : 0}
@@ -266,7 +267,7 @@ export function BowmanPlayer({ roomCode, playerName }: Props) {
                         {/* Drag prompt (only when not dragging) */}
                         {phase === "playing" && !isDragging && (
                             <div className={styles.tapPrompt}>
-                                Drag to aim · release to fire
+                                Pull back ↙ to aim · release to fire
                             </div>
                         )}
 

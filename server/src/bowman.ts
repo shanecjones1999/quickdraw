@@ -9,7 +9,7 @@
 //   Target at x = TARGET_X.  Bullseye centre at y = BULLSEYE_Y.
 //   Score = f(|y_impact − BULLSEYE_Y|).
 
-export const GRAVITY    = 150;   // world units / s²  (game-scaled, not real)
+export const GRAVITY    = 80;    // world units / s²  (game-scaled, not real)
 export const MAX_SPEED  = 400;   // world units / s  at 100 % power
 export const TARGET_X   = 600;   // horizontal distance to the target
 export const BULLSEYE_Y = 150;   // height of bullseye centre from ground
