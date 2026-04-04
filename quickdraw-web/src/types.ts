@@ -47,6 +47,7 @@ export interface GameOverPayload<T = unknown> {
 
 export interface RoundShufflePayload {
     gameType: GameType;
+    availableGameTypes: GameType[];
     roundNumber: number;
     totalRounds: number;
     durationMs: number;

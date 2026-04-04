@@ -866,6 +866,7 @@ function emitPlayerResumeState(
     if (room.phase === "shuffling") {
         socket.emit("round:shuffle", {
             gameType: room.roundSequence[room.currentRound] ?? room.gameType,
+            availableGameTypes: getAvailableGameTypes(room.players.size),
             roundNumber: room.currentRound + 1,
             totalRounds: room.totalRounds,
             durationMs: Math.max(
@@ -1550,12 +1551,14 @@ function queueRoundStart(room: Room) {
 
     const nextGameType = room.roundSequence[room.currentRound] ?? "klotski";
     const nextRoundNumber = room.currentRound + 1;
+    const availableGameTypes = getAvailableGameTypes(room.players.size);
 
     room.phase = "shuffling";
     room.roundReadyPlayerSessionIds.clear();
     room.roundReadyOpensAt = Date.now() + ROUND_SHUFFLE_DURATION_MS;
     io.to(room.code).emit("round:shuffle", {
         gameType: nextGameType,
+        availableGameTypes,
         roundNumber: nextRoundNumber,
         totalRounds: room.totalRounds,
         durationMs: ROUND_SHUFFLE_DURATION_MS,
@@ -2553,6 +2556,7 @@ io.on("connection", (socket) => {
             clearPendingRoundStart(room);
             clearPendingResultsAdvance(room);
             clearRoundEndTimeout(room);
+            clearReactionTapTimers(room);
             io.to(room.code).emit("error", { message: "Host disconnected." });
             deleteRoom(room.code);
         } else {

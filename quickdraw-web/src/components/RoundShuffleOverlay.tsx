@@ -1,14 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { GameType } from "../types";
-import {
-    ALL_GAME_TYPES,
-    formatGameLabel,
-    getGameInstructionMeta,
-} from "../gameMeta";
+import { formatGameLabel, getGameInstructionMeta } from "../gameMeta";
 import styles from "../styles/RoundShuffleOverlay.module.css";
 
 interface Props {
     gameType: GameType;
+    availableGameTypes: GameType[];
     roundNumber: number;
     totalRounds: number;
     durationMs: number;
@@ -27,23 +24,30 @@ interface Props {
 
 const REEL_SLOWDOWN_FACTOR = 1.5;
 const INITIAL_REEL_DELAY_MS = 270;
-const MYSTERY_LABELS = ["🎲 Mystery Game", "⚡ Random Draw", "❓ Hidden Pick"];
 
-function rotateGameTypes(offset: number): GameType[] {
+function rotateGameTypes(gameTypes: GameType[], offset: number): GameType[] {
     return [
-        ...ALL_GAME_TYPES.slice(offset),
-        ...ALL_GAME_TYPES.slice(0, offset),
+        ...gameTypes.slice(offset),
+        ...gameTypes.slice(0, offset),
     ];
 }
 
-function buildShuffleSequence(targetGameType: GameType): GameType[] {
-    const startOffset = Math.floor(Math.random() * ALL_GAME_TYPES.length);
-    const firstPass = rotateGameTypes(startOffset);
+function buildShuffleSequence(
+    targetGameType: GameType,
+    availableGameTypes: GameType[],
+): GameType[] {
+    const gameTypes = availableGameTypes.includes(targetGameType)
+        ? availableGameTypes
+        : [...availableGameTypes, targetGameType];
+    const startOffset = Math.floor(Math.random() * gameTypes.length);
+    const firstPass = rotateGameTypes(gameTypes, startOffset);
     const secondPass = rotateGameTypes(
-        (startOffset + 3) % ALL_GAME_TYPES.length,
+        gameTypes,
+        (startOffset + 3) % gameTypes.length,
     );
     const landingPass = rotateGameTypes(
-        (startOffset + 1) % ALL_GAME_TYPES.length,
+        gameTypes,
+        (startOffset + 1) % gameTypes.length,
     );
     const sequence = [...firstPass, ...secondPass];
 
@@ -84,6 +88,7 @@ function buildShuffleSequence(targetGameType: GameType): GameType[] {
 
 export function RoundShuffleOverlay({
     gameType,
+    availableGameTypes,
     roundNumber,
     totalRounds,
     durationMs,
@@ -99,7 +104,10 @@ export function RoundShuffleOverlay({
     leaderName = null,
     onReady,
 }: Props) {
-    const sequence = useMemo(() => buildShuffleSequence(gameType), [gameType]);
+    const sequence = useMemo(
+        () => buildShuffleSequence(gameType, availableGameTypes),
+        [availableGameTypes, gameType],
+    );
     const [activeIndex, setActiveIndex] = useState(0);
     const [showInstructions, setShowInstructions] = useState(false);
     const [countdownNow, setCountdownNow] = useState(() => Date.now());
@@ -140,13 +148,13 @@ export function RoundShuffleOverlay({
     const leaderBadgeLabel =
         leaderName && leaderName !== recentWinnerName ? leaderName : null;
 
-    const previousLabel =
-        MYSTERY_LABELS[
-            (Math.max(activeIndex - 1, 0) + MYSTERY_LABELS.length) %
-                MYSTERY_LABELS.length
-        ];
-    const currentLabel = MYSTERY_LABELS[activeIndex % MYSTERY_LABELS.length];
-    const nextLabel = MYSTERY_LABELS[(activeIndex + 1) % MYSTERY_LABELS.length];
+    const previousLabel = formatGameLabel(
+        sequence[Math.max(activeIndex - 1, 0)] ?? gameType,
+    );
+    const currentLabel = formatGameLabel(sequence[activeIndex] ?? gameType);
+    const nextLabel = formatGameLabel(
+        sequence[Math.min(activeIndex + 1, sequence.length - 1)] ?? gameType,
+    );
 
     useEffect(() => {
         const intervalId = setInterval(() => {

@@ -58,7 +58,7 @@ export function ReactionTapPlayer({
         successfulPrompts: 0,
         missedPrompts: 0,
         penalties: 0,
-        score: -900,
+        score: 0,
         averageReactionTime: null,
         bestReactionTime: null,
         latestReactionTime: null,

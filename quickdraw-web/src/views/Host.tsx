@@ -69,6 +69,7 @@ const MIN_PLAYERS_TO_START = 1;
 
 interface ShuffleState {
     gameType: GameType;
+    availableGameTypes: GameType[];
     roundNumber: number;
     totalRounds: number;
     durationMs: number;
@@ -233,8 +234,6 @@ export function Host({ roomCode }: Props) {
             : gameType === "teamtug" && phase === "playing"
               ? `${Math.max(((teamTugState?.timeLimitMs ?? 0) - now) / 1000, 0).toFixed(1)}s`
               : formatTime(now);
-    void reactionTapResults.length;
-
     useEffect(() => {
         if (phase !== "results" || resultsAutoAdvanceAt === null || matchOver) {
             return;
@@ -317,6 +316,7 @@ export function Host({ roomCode }: Props) {
     const onRoundShuffle = useCallback(
         ({
             gameType: gt,
+            availableGameTypes,
             roundNumber,
             totalRounds: nextTotalRounds,
             durationMs,
@@ -332,6 +332,7 @@ export function Host({ roomCode }: Props) {
             setResultsAutoAdvanceAt(null);
             setShuffleState({
                 gameType: gt,
+                availableGameTypes,
                 roundNumber,
                 totalRounds: nextTotalRounds,
                 durationMs,
@@ -577,23 +578,6 @@ export function Host({ roomCode }: Props) {
                 snapshot={reactionTapProg.get(playerId) ?? null}
             />
         );
-    }
-
-    function renderReactionTapResults() {
-        return reactionTapResults.map((result) => (
-            <div key={result.id} className={styles.bowmanResultRow}>
-                <span className={styles.bowmanResultRank}>
-                    {result.rank !== null && result.rank <= 3
-                        ? MEDALS[result.rank - 1]
-                        : (result.rank ?? "—")}
-                </span>
-                <span className={styles.bowmanResultName}>{result.name}</span>
-                <span className={styles.bowmanResultScore}>
-                    {result.score} pts · {result.successfulPrompts}/
-                    {result.goPrompts} hits
-                </span>
-            </div>
-        ));
     }
 
     return (
@@ -908,6 +892,7 @@ export function Host({ roomCode }: Props) {
                     <RoundShuffleOverlay
                         key={`${shuffleState.roundNumber}-${shuffleState.gameType}`}
                         gameType={shuffleState.gameType}
+                        availableGameTypes={shuffleState.availableGameTypes}
                         roundNumber={shuffleState.roundNumber}
                         totalRounds={shuffleState.totalRounds}
                         durationMs={shuffleState.durationMs}

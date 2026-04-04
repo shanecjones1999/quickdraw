@@ -137,6 +137,7 @@ interface Props {
 
 interface ShuffleState {
     gameType: GameType;
+    availableGameTypes: GameType[];
     roundNumber: number;
     totalRounds: number;
     durationMs: number;
@@ -462,6 +463,7 @@ export function Player({
     const onRoundShuffle = useCallback(
         ({
             gameType: gt,
+            availableGameTypes,
             roundNumber,
             totalRounds: nextTotalRounds,
             durationMs,
@@ -476,6 +478,7 @@ export function Player({
             setResultsAutoAdvanceAt(null);
             setShuffleState({
                 gameType: gt,
+                availableGameTypes,
                 roundNumber,
                 totalRounds: nextTotalRounds,
                 durationMs,
@@ -1027,6 +1030,7 @@ export function Player({
                     <RoundShuffleOverlay
                         key={`${shuffleState.roundNumber}-${shuffleState.gameType}`}
                         gameType={shuffleState.gameType}
+                        availableGameTypes={shuffleState.availableGameTypes}
                         roundNumber={shuffleState.roundNumber}
                         totalRounds={shuffleState.totalRounds}
                         durationMs={shuffleState.durationMs}
