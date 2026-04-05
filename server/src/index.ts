@@ -986,12 +986,12 @@ io.on("connection", (socket) => {
 
         room.totalRounds = sanitizeTotalRounds(room.totalRounds);
         room.currentRound = 0;
-        // room.roundSequence = createRoundSequence(
-        //     room.totalRounds,
-        //     room.players.size,
-        // );
-        room.roundSequence = Array(room.totalRounds).fill("rushhour");
-        room.totalRounds = 1;
+        room.roundSequence = createRoundSequence(
+            room.totalRounds,
+            room.players.size,
+        );
+        // room.roundSequence = Array(room.totalRounds).fill("pipeconnect");
+        // room.totalRounds = 1;
         for (const player of room.players.values()) {
             player.matchPoints = 0;
             player.roundsWon = 0;
