@@ -5,7 +5,13 @@ import { randomUUID } from "crypto";
 import { Server } from "socket.io";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
-import { createRoom, getRoom, getRoomBySocket, getRoomByHostSessionId, deleteRoom } from "./rooms.js";
+import {
+    createRoom,
+    getRoom,
+    getRoomBySocket,
+    getRoomByHostSessionId,
+    deleteRoom,
+} from "./rooms.js";
 import { getHandler, getAvailableGameTypes } from "./handlers/index.js";
 import { finishMathSprintState } from "./mathsprint.js";
 import type { MathSprintState } from "./mathsprint.js";
@@ -83,7 +89,10 @@ function shuffleGameTypes(gameTypes: GameType[]): GameType[] {
     return pool;
 }
 
-function createRoundSequence(totalRounds: number, playerCount: number): GameType[] {
+function createRoundSequence(
+    totalRounds: number,
+    playerCount: number,
+): GameType[] {
     const availableGameTypes = getAvailableGameTypes(playerCount);
     const sequence: GameType[] = [];
 
@@ -481,7 +490,12 @@ function emitPlayerResumeState(
                 promptIndex: rs?.activePromptIndex ?? -1,
                 totalPrompts: rs?.prompts.length ?? 6,
                 kind,
-                label: kind === "go" ? "TAP!" : kind === "decoy" ? "WAIT" : "Stand by",
+                label:
+                    kind === "go"
+                        ? "TAP!"
+                        : kind === "decoy"
+                          ? "WAIT"
+                          : "Stand by",
                 activeUntil: rs?.activeSignalEndsAt ?? null,
                 startedAt: rs?.activeSignalStartedAt ?? null,
             });
@@ -510,7 +524,11 @@ function emitPlayerResumeState(
             handler.resumeSyncEvent,
             handler.resumeSyncPayload(player.gameState),
         );
-        if (handler.shouldResumeSolved(player.gameState, player.rank) && player.rank !== null && handler.solvedEvent) {
+        if (
+            handler.shouldResumeSolved(player.gameState, player.rank) &&
+            player.rank !== null &&
+            handler.solvedEvent
+        ) {
             socket.emit(
                 handler.solvedEvent,
                 handler.resumeSolvedPayload(player.gameState, player.rank),
@@ -972,6 +990,8 @@ io.on("connection", (socket) => {
             room.totalRounds,
             room.players.size,
         );
+        // room.roundSequence = Array(room.totalRounds).fill("klotski");
+        // room.totalRounds = 1;
         for (const player of room.players.values()) {
             player.matchPoints = 0;
             player.roundsWon = 0;
@@ -983,19 +1003,25 @@ io.on("connection", (socket) => {
     // ── Generic action handler ──────────────────────────────────────
     // Register listeners for all game action events
     for (const gameType of [
-        "klotski", "bowman", "rushhour", "lightsout", "codebreaker",
-        "mathsprint", "pipeconnect", "simoncopy", "memorysequenceplus",
-        "pairmatch", "oddoneout", "reactiontap", "teamtug",
+        "klotski",
+        "bowman",
+        "rushhour",
+        "lightsout",
+        "codebreaker",
+        "mathsprint",
+        "pipeconnect",
+        "simoncopy",
+        "memorysequenceplus",
+        "pairmatch",
+        "oddoneout",
+        "reactiontap",
+        "teamtug",
     ] as GameType[]) {
         const handler = getHandler(gameType);
 
         socket.on(handler.actionEvent, (data: unknown) => {
             const room = getRoomBySocket(socket.id);
-            if (
-                !room ||
-                room.phase !== "playing" ||
-                room.gameType !== gameType
-            )
+            if (!room || room.phase !== "playing" || room.gameType !== gameType)
                 return;
 
             // Custom action handlers manage everything themselves
@@ -1009,7 +1035,8 @@ io.on("connection", (socket) => {
             if (handler.isPlayerDone(player.gameState)) return;
 
             // Time-gated games
-            if (room.roundEndAt !== null && Date.now() > room.roundEndAt) return;
+            if (room.roundEndAt !== null && Date.now() > room.roundEndAt)
+                return;
 
             const { ok, state } = handler.applyAction(player.gameState, data);
             if (!ok) return;

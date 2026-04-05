@@ -14,8 +14,8 @@ export const klotskiHandler: GameHandler = {
     createSeed() {
         return createInitialState();
     },
-    createState(_seed) {
-        return createInitialState();
+    createState(seed) {
+        return createInitialState(s(seed).pieces);
     },
     startPayload(seed) {
         const st = s(seed);
