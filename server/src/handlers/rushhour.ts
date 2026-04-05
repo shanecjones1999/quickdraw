@@ -1,6 +1,10 @@
 import type { GameHandler } from "../gameHandler.js";
 import type { RushHourState } from "../rushhour.js";
-import { createRushHourState, applyRushHourMove } from "../rushhour.js";
+import {
+    createRushHourState,
+    applyRushHourMove,
+    PUZZLE_COUNT,
+} from "../rushhour.js";
 
 function s(state: unknown): RushHourState {
     return state as RushHourState;
@@ -10,7 +14,7 @@ export const rushhourHandler: GameHandler = {
     type: "rushhour",
 
     createSeed() {
-        return Math.floor(Math.random() * 3);
+        return Math.floor(Math.random() * PUZZLE_COUNT());
     },
     createState(seed) {
         return createRushHourState(seed as number);
