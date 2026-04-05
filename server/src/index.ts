@@ -115,6 +115,23 @@ function emitRoomSettings(room: Room) {
     });
 }
 
+function emitHostProgressSnapshots(room: Room) {
+    if (room.phase !== "playing" || room.gameType === "teamtug") {
+        return;
+    }
+
+    const handler = getHandler(room.gameType);
+
+    for (const player of room.players.values()) {
+        if (!player.gameState) continue;
+
+        io.to(room.hostSocketId).emit(
+            handler.progressEvent,
+            handler.progressPayload(player.gameState, player.id, player.rank),
+        );
+    }
+}
+
 function serializePlayers(room: Room) {
     return [...room.players.values()].map(({ id, name, rank }) => ({
         id,
@@ -284,6 +301,7 @@ function startRound(room: Room, nextGameType?: GameType) {
             roundNumber: room.currentRound,
             totalRounds: room.totalRounds,
         });
+        emitHostProgressSnapshots(room);
     }
 
     emitRoomSettings(room);
@@ -635,16 +653,7 @@ function emitHostResumeState(
         socket.emit("game:started", basePayload);
     }
 
-    // Re-send progress snapshots for each player so the host dashboard populates
-    setTimeout(() => {
-        for (const player of room.players.values()) {
-            if (!player.gameState) continue;
-            io.to(room.hostSocketId).emit(
-                handler.progressEvent,
-                handler.progressPayload(player.gameState, player.id, player.rank),
-            );
-        }
-    }, 0);
+    emitHostProgressSnapshots(room);
 }
 
 // ── End game ────────────────────────────────────────────────────────
