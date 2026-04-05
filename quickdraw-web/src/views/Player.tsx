@@ -4,7 +4,6 @@ import { useSocket } from "../hooks/useSocket";
 import { useTimer, formatTime } from "../hooks/useTimer";
 import { useCellSize } from "../hooks/useCellSize";
 import { ConnectionNotice } from "../components/ConnectionNotice";
-import { formatGameLabel } from "../gameMeta";
 import { useConnectionNotice } from "../hooks/useConnectionNotice";
 import { KlotskiBoard } from "../components/KlotskiBoard";
 import { RoundShuffleOverlay } from "../components/RoundShuffleOverlay";
@@ -1036,13 +1035,14 @@ export function Player({
                         durationMs={shuffleState.durationMs}
                         landingBufferMs={shuffleState.landingBufferMs}
                         title="Drawing the next mini game"
-                        subtitle={`Get ready — ${formatGameLabel(shuffleState.gameType)} is about to begin.`}
+                        subtitle="Get ready — your mini-game will appear when the round starts."
                         readyCount={shuffleReadyState?.readyCount ?? 0}
                         readyTarget={shuffleReadyState?.readyTarget ?? 1}
                         readyThresholdMet={
                             shuffleReadyState?.readyThresholdMet ?? false
                         }
                         canReady
+                        concealSelection
                         playerReady={shuffleReadyState?.playerReady ?? false}
                         recentWinnerName={recentWinnerName}
                         leaderName={leaderName}

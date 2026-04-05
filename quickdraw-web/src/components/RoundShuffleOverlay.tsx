@@ -20,6 +20,7 @@ interface Props {
     recentWinnerName?: string | null;
     leaderName?: string | null;
     onReady?: () => void;
+    concealSelection?: boolean;
 }
 
 const REEL_SLOWDOWN_FACTOR = 1.5;
@@ -103,6 +104,7 @@ export function RoundShuffleOverlay({
     recentWinnerName = null,
     leaderName = null,
     onReady,
+    concealSelection = false,
 }: Props) {
     const sequence = useMemo(
         () => buildShuffleSequence(gameType, availableGameTypes),
@@ -148,13 +150,19 @@ export function RoundShuffleOverlay({
     const leaderBadgeLabel =
         leaderName && leaderName !== recentWinnerName ? leaderName : null;
 
-    const previousLabel = formatGameLabel(
-        sequence[Math.max(activeIndex - 1, 0)] ?? gameType,
-    );
-    const currentLabel = formatGameLabel(sequence[activeIndex] ?? gameType);
-    const nextLabel = formatGameLabel(
-        sequence[Math.min(activeIndex + 1, sequence.length - 1)] ?? gameType,
-    );
+    const hiddenLabel = "Surprise mini-game";
+    const previousLabel = concealSelection
+        ? hiddenLabel
+        : formatGameLabel(sequence[Math.max(activeIndex - 1, 0)] ?? gameType);
+    const currentLabel = concealSelection
+        ? hiddenLabel
+        : formatGameLabel(sequence[activeIndex] ?? gameType);
+    const nextLabel = concealSelection
+        ? hiddenLabel
+        : formatGameLabel(
+              sequence[Math.min(activeIndex + 1, sequence.length - 1)] ??
+                  gameType,
+          );
 
     useEffect(() => {
         const intervalId = setInterval(() => {
@@ -230,10 +238,14 @@ export function RoundShuffleOverlay({
     }, [durationMs, landingBufferMs, sequence]);
 
     const phaseTitle = showInstructions
-        ? `Next up: ${instructionMeta.shortLabel}`
+        ? concealSelection
+            ? "Round locked in"
+            : `Next up: ${instructionMeta.shortLabel}`
         : title;
     const phaseSubtitle = showInstructions
-        ? "Quick rules check before the round begins."
+        ? concealSelection
+            ? "Tap Ready when you're set. The mini-game will appear when the round begins."
+            : "Quick rules check before the round begins."
         : subtitle;
     const waitingForReady = showInstructions && !readyThresholdMet;
 
@@ -301,52 +313,75 @@ export function RoundShuffleOverlay({
                 ) : (
                     <div className={styles.revealBlock}>
                         <div className={styles.revealBadge}>
-                            {formatGameLabel(gameType)}
+                            {concealSelection
+                                ? "Surprise round"
+                                : formatGameLabel(gameType)}
                         </div>
                         <div className={styles.revealCaption}>
-                            Locked in for Round {roundNumber}
+                            {concealSelection
+                                ? "Your mini-game will appear as soon as the round starts."
+                                : `Locked in for Round ${roundNumber}`}
                         </div>
                     </div>
                 )}
                 <div
                     className={`${styles.instructionsCard} ${showInstructions ? styles.instructionsCardVisible : styles.instructionsCardHidden}`}
                 >
-                    <div className={styles.instructionsHeader}>
-                        <div className={styles.instructionsTitle}>
-                            {instructionMeta.shortLabel}
+                    {concealSelection ? (
+                        <div className={styles.instructionsGrid}>
+                            <div
+                                className={`${styles.instructionsItem} ${styles.instructionsItemWide}`}
+                            >
+                                <span className={styles.instructionsLabel}>
+                                    Heads up
+                                </span>
+                                <span className={styles.instructionsText}>
+                                    The host has locked in this round. Keep your
+                                    phone ready and the challenge will reveal
+                                    itself when play begins.
+                                </span>
+                            </div>
                         </div>
-                        <div className={styles.instructionsCategory}>
-                            {instructionMeta.category}
-                        </div>
-                    </div>
-                    <div className={styles.instructionsGrid}>
-                        <div className={styles.instructionsItem}>
-                            <span className={styles.instructionsLabel}>
-                                Objective
-                            </span>
-                            <span className={styles.instructionsText}>
-                                {instructionMeta.objective}
-                            </span>
-                        </div>
-                        <div className={styles.instructionsItem}>
-                            <span className={styles.instructionsLabel}>
-                                Controls
-                            </span>
-                            <span className={styles.instructionsText}>
-                                {instructionMeta.controls}
-                            </span>
-                        </div>
-                        <div
-                            className={`${styles.instructionsItem} ${styles.instructionsItemWide}`}
-                        >
-                            <span className={styles.instructionsLabel}>
-                                Win Condition
-                            </span>
-                            <span className={styles.instructionsText}>
-                                {instructionMeta.winCondition}
-                            </span>
-                        </div>
-                    </div>
+                    ) : (
+                        <>
+                            <div className={styles.instructionsHeader}>
+                                <div className={styles.instructionsTitle}>
+                                    {instructionMeta.shortLabel}
+                                </div>
+                                <div className={styles.instructionsCategory}>
+                                    {instructionMeta.category}
+                                </div>
+                            </div>
+                            <div className={styles.instructionsGrid}>
+                                <div className={styles.instructionsItem}>
+                                    <span className={styles.instructionsLabel}>
+                                        Objective
+                                    </span>
+                                    <span className={styles.instructionsText}>
+                                        {instructionMeta.objective}
+                                    </span>
+                                </div>
+                                <div className={styles.instructionsItem}>
+                                    <span className={styles.instructionsLabel}>
+                                        Controls
+                                    </span>
+                                    <span className={styles.instructionsText}>
+                                        {instructionMeta.controls}
+                                    </span>
+                                </div>
+                                <div
+                                    className={`${styles.instructionsItem} ${styles.instructionsItemWide}`}
+                                >
+                                    <span className={styles.instructionsLabel}>
+                                        Win Condition
+                                    </span>
+                                    <span className={styles.instructionsText}>
+                                        {instructionMeta.winCondition}
+                                    </span>
+                                </div>
+                            </div>
+                        </>
+                    )}
                     {showInstructions && (
                         <div className={styles.instructionsFooterBlock}>
                             <div className={styles.instructionsFooter}>
